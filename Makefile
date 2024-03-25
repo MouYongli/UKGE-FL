@@ -9,7 +9,7 @@ clean:
 	find . | grep -E "(__pycache__|\.pyc|\.pyo)" | xargs rm -rf
 	find . | grep -E ".pytest_cache" | xargs rm -rf
 	find . | grep -E ".ipynb_checkpoints" | xargs rm -rf
-	rm -rf *.egg-info
+	find . | grep -E ".egg-info" | xargs rm -rf
 
 activate: 
 	conda activate ${VENV}
