@@ -11,29 +11,20 @@ from torch.utils.data import Dataset, DataLoader
 here = osp.dirname(osp.abspath(__file__))
 data_path = osp.join(here, '../data')
 
-class KGDataset(Dataset):
-    def __init__(self, root=data_path, 
-                 dataset='cn15k', 
-                 split='train',
-                 transform=None, 
-                 pre_transform=None):
-        self.root=os.path.join(data_path, dataset)
+class KGDataset:
+    def __init__(self, root: str=data_path, 
+                 dataset: str='cn15k', 
+                 split='train'):
+        self.root=root
         self.dataset = dataset
         self.split = split
-        self.kg_triples_path = os.path.join(self.root, '{}.tsv'.format(split))
-        self.entity_map_path = os.path.join(self.root, 'entity_id.csv')
-        self.relation_map_path = os.path.join(self.root, 'relation_id.csv')
+        self.kg_triples_path = os.path.join(self.root, dataset, '{}.tsv'.format(split))
+        self.entity_ids_path = os.path.join(self.root, dataset, 'entity_id.csv')
+        self.relation_ids_path = os.path.join(self.root, dataset, 'relation_id.csv')
 
-        self.entities = pd.read_csv(self.entity_map_path, header=None, names=["entity_name", "entity_id"])
-        self.relations = pd.read_csv(self.relation_map_path, header=None, names=["entity_name", "entity_id"])
+        self.entity_ids = pd.read_csv(self.entity_ids_path, header=None, names=["entity_name", "entity_id"])
+        self.relation_ids = pd.read_csv(self.relation_ids_path, header=None, names=["entity_name", "entity_id"])
         self.triples = torch.tensor(pd.read_csv(self.kg_triples_path, sep='\t', header=None).to_numpy())
-    
-    def __getitem__(self, index) -> Any:
-        return self.triples[index]
-    
-    def __len__(self):
-        return len(self.triples)
-
 
 class KGTripletLoader(DataLoader):
     def __init__(self, head_index: Tensor, 
@@ -46,6 +37,7 @@ class KGTripletLoader(DataLoader):
         self.tail_index = tail_index
         self.scores = scores
         super().__init__(range(head_index.numel()), collate_fn=self.sample, **kwargs)
+
 
     def sample(self, index: List[int]) -> Tuple[Tensor, Tensor, Tensor]:
         index = torch.tensor(index, device=self.head_index.device)

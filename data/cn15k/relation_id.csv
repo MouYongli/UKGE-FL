@@ -1,3 +1,4 @@
+relation string,id
 relatedto,0
 hascontext,1
 isa,2
