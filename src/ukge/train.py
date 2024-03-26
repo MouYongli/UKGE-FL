@@ -361,3 +361,5 @@ class Validator(object):
         Acc = np.array(Acc)
 
         return scores, P, R, F1, Acc
+
+        #123
