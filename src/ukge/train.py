@@ -362,4 +362,140 @@ class Validator(object):
 
         return scores, P, R, F1, Acc
 
-        #123
+class UKGE_LOGI_VALIDATOR(Validator):
+    def __init__(self, ):
+        Validator.__init__(self)
+
+    # override
+    def build_by_var(self, test_data, tf_model, this_data, sess=tf.Session()):
+        """
+        use data and model in memory.
+        get self.vec_c (vectors for concepts), and self.vec_r(vectors for relations)
+        :return:
+        """
+        self.this_data = this_data  # data.Data()
+
+        self.test_triples = test_data
+        self.model = tf_model
+
+        value_ht, value_r, w, b = sess.run([self.model._ht, self.model._r, self.model.w, self.model.b])  # extract values.
+        self.vec_c = np.array(value_ht)
+        self.vec_r = np.array(value_r)
+        self.w = w
+        self.b = b
+
+    # override
+    def get_score(self, h, r, t):
+        hvec, rvec, tvec = self.vecs_from_triples(h, r, t)
+        return sigmoid(self.w*np.sum(np.multiply(np.multiply(hvec, tvec), rvec))+self.b)
+
+    # override
+    def get_score_batch(self, h_batch, r_batch, t_batch, isneg2Dbatch=False):
+        hvecs = self.con_index2vec_batch(h_batch)
+        rvecs = self.rel_index2vec_batch(r_batch)
+        tvecs = self.con_index2vec_batch(t_batch)
+        if isneg2Dbatch:
+            axis = 2  # axis for reduce_sum
+        else:
+            axis = 1
+        return sigmoid(self.w*np.sum(np.multiply(np.multiply(hvecs, tvecs), rvecs), axis=axis)+self.b)
+
+
+class UKGE_RECT_VALIDATOR(Validator):
+    def __init__(self, ):
+        Validator.__init__(self)
+
+    # override
+    def build_by_var(self, test_data, tf_model, this_data, sess=tf.Session()):
+        """
+        use data and model in memory.
+        get self.vec_c (vectors for concepts), and self.vec_r(vectors for relations)
+        :return:
+        """
+        self.this_data = this_data  # data.Data()
+
+        self.test_triples = test_data
+        self.model = tf_model
+
+        value_ht, value_r, w, b = sess.run([self.model._ht, self.model._r, self.model.w, self.model.b])  # extract values.
+        self.vec_c = np.array(value_ht) #head和tail的映射
+        self.vec_r = np.array(value_r)
+        self.w = w
+        self.b = b
+
+    # override
+    def get_score(self, h, r, t):
+        # no sigmoid
+        hvec, rvec, tvec = self.vecs_from_triples(h, r, t)
+        return self.w * np.sum(np.multiply(np.multiply(hvec, tvec), rvec)) + self.b
+
+    # override
+    def get_score_batch(self, h_batch, r_batch, t_batch, isneg2Dbatch=False):
+        # no sigmoid
+        hvecs = self.con_index2vec_batch(h_batch)
+        rvecs = self.rel_index2vec_batch(r_batch)
+        tvecs = self.con_index2vec_batch(t_batch)
+        if isneg2Dbatch:
+            axis = 2  # axis for reduce_sum
+        else:
+            axis = 1
+        return self.w * np.sum(np.multiply(np.multiply(hvecs, tvecs), rvecs), axis=axis) + self.b
+
+
+    def bound_score(self, scores):
+        """
+        scores<0 =>0
+        score>1 => 1
+        :param scores:
+        :return:
+        """
+        return np.minimum(np.maximum(scores, 0), 1)
+
+
+    def get_mse(self, toprint=False, save_dir='', epoch=0):
+        test_triples = self.test_triples
+        N = test_triples.shape[0]
+
+        # existing triples
+        # (score - w)^2
+        h_batch = test_triples[:, 0].astype(int)
+        r_batch = test_triples[:, 1].astype(int)
+        t_batch = test_triples[:, 2].astype(int)
+        w_batch = test_triples[:, 3]
+        scores = self.get_score_batch(h_batch, r_batch, t_batch)
+        scores = self.bound_score(scores)
+        mse = np.sum(np.square(scores - w_batch))
+
+        mse = mse / N
+
+        return mse
+
+
+    def get_mse_neg(self, neg_per_positive):
+        test_triples = self.test_triples
+        N = test_triples.shape[0]
+
+        # negative samples
+        # (score - 0)^2
+        all_neg_hn_batch = self.this_data.corrupt_batch(test_triples, neg_per_positive, "h")
+        all_neg_tn_batch = self.this_data.corrupt_batch(test_triples, neg_per_positive, "t")
+        neg_hn_batch, neg_rel_hn_batch, \
+        negt_batch, negh_batch, \
+        neg_rel_tn_batch, neg_tn_batch \
+            = all_neg_hn_batch[:, :, 0].astype(int), \
+              all_neg_hn_batch[:, :, 1].astype(int), \
+              all_neg_hn_batch[:, :, 2].astype(int), \
+              all_neg_tn_batch[:, :, 0].astype(int), \
+              all_neg_tn_batch[:, :, 1].astype(int), \
+              all_neg_tn_batch[:, :, 2].astype(int)
+        scores_hn = self.get_score_batch(neg_hn_batch, neg_rel_hn_batch, negt_batch, isneg2Dbatch=True)
+        scores_tn = self.get_score_batch(negh_batch, neg_rel_tn_batch, neg_tn_batch, isneg2Dbatch=True)
+
+        scores_hn = self.bound_score(scores_hn)
+        scores_tn = self.bound_score(scores_tn)
+
+        mse_hn = np.sum(np.mean(np.square(scores_hn - 0), axis=1)) / N
+        mse_tn = np.sum(np.mean(np.square(scores_tn - 0), axis=1)) / N
+
+        mse = (mse_hn + mse_tn) / 2
+        return mse
