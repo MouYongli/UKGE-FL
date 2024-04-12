@@ -7,12 +7,12 @@ setup(
     author_email = "mou@dbis.rwth-aachen.de",
     description = ("Enhancing Uncertain Knowledge Graphs Embedding using Fuzzy Logic"),
     license = "MIT",
-    url = "https://github.com/mouyongli",
+    url = "https://github.com/MouYongli/UKGE-FL",
     package_dir={"": "src"},
     packages=find_packages("src"),
     classifiers=[
         "Development Status :: 1 - Alpha",
-        "Topic :: Medical Image Segmentation",
+        "Topic ::Enhancing Uncertain Knowledge Graphs Embedding using Fuzzy Logic",
         "License :: OSI Approved :: MIT License",
     ],
 )

@@ -165,7 +165,7 @@ class KGTripleLoader(DataLoader):
         return head_index, rel_index, tail_index, score
     
 if __name__ == "__main__":
-    train_data = KGDataset()
+    train_data = KGTripleDataset()
     print(train_data.triples.shape)
     # train_loader = KGTripletLoader(head_index=train_data.edge_index[0],
     #                                rel_type=train_data.edge_type, 
