@@ -111,10 +111,6 @@ class KGTripleDataset:
             while samp == triple[pos]:
                 samp = np.random.randint(self.num_cons())
             res[pos] = samp
-            # # debug
-            # if tuple(res) in self.triples_record:
-            #     print('negative sampling: rechoose')
-            #     print(res)
             if tuple(res) not in self.triples_record:
                 hit = False
         return res
