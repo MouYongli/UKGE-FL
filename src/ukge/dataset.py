@@ -9,19 +9,27 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 
 here = osp.dirname(osp.abspath(__file__))
-data_path = osp.join(here, '../data')
+data_path = osp.join(here, '../..', 'data')
 
 class KGTripleDataset:
-    def __init__(self, root: str=data_path, 
-                 dataset: str='cn15k'):
+    def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10):
         self.root=root
         self.dataset = dataset
+        assert split in ['train', 'val', 'test', 'all'], "Invalid value for 'split'. It should be one of 'train', 'val', 'test' or 'all'."
+        self.split = split
+        self.num_neg_per_positive = num_neg_per_positive
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
         self.data_triples = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None).to_numpy()
         self.train_triples = pd.read_csv(os.path.join(self.root, dataset, 'train.tsv'), sep='\t', header=None).to_numpy() # training dataset
         self.val_triples = pd.read_csv(os.path.join(self.root, dataset, 'val.tsv'), sep='\t', header=None).to_numpy()  # validation dataset
         self.test_triples = pd.read_csv(os.path.join(self.root, dataset, 'test.tsv'), sep='\t', header=None).to_numpy()  # validation dataset
+        self.data = {
+            'all': self.data_triples,
+            'train': self.train_triples,
+            'val': self.val_triples,
+            'test': self.test_triples,
+            }
 
         # concept vocab
         self.cons = []
@@ -50,13 +58,16 @@ class KGTripleDataset:
         self.tph = np.array([0])
         tph_array = np.zeros((len(self.rels), len(self.cons)))
         hpt_array = np.zeros((len(self.rels), len(self.cons)))
-        for h_, r_, t_, w in self.data_triples.to_numpy():  # only training data
+        for h_, r_, t_, w in self.data_triples:  # only training data
             h, r, t = int(h_), int(r_), int(t_)
             tph_array[r][h] += 1.
             hpt_array[r][t] += 1.
-            self.triples_record.add([h, r, t])
+            self.triples_record.add((h, r, t))
         self.tph = np.mean(tph_array, axis=1)
         self.hpt = np.mean(hpt_array, axis=1)
+
+    def __len__(self):
+        return len(self.data[self.split])
 
     def num_cons(self):
         '''Returns number of ontologies.
@@ -140,16 +151,11 @@ class KGTripleDataset:
 
 
 class KGTripleLoader(DataLoader):
-    def __init__(self, head_index: Tensor, 
-                 rel_index: Tensor,
-                 tail_index: Tensor,
-                 scores: Tensor, 
+    def __init__(self, 
+                 dataset: KGTripleDataset,
                  **kwargs):
-        self.head_index = head_index
-        self.rel_index = rel_index
-        self.tail_index = tail_index
-        self.scores = scores
-        super().__init__(range(head_index.numel()), collate_fn=self.sample, **kwargs)
+        self.dataset = dataset
+        super().__init__(range(self.dataset.len()), collate_fn=self.sample, **kwargs)
 
 
     def sample(self, index: List[int]) -> Tuple[Tensor, Tensor, Tensor]:
@@ -161,13 +167,11 @@ class KGTripleLoader(DataLoader):
         return head_index, rel_index, tail_index, score
     
 if __name__ == "__main__":
-    train_data = KGTripleDataset()
-    print(train_data.triples.shape)
-    # train_loader = KGTripletLoader(head_index=train_data.edge_index[0],
-    #                                rel_type=train_data.edge_type, 
-    #                                tail_index=train_data.edge_index[1],
-    #                                scores=train_data.scores[1],
-    #                                batch_size=1000,
-    #                                shuffle=True)
-    # for head_index, rel_type, tail_index, scores in train_loader:
-    #     print(head_index, rel_type, tail_index, scores)
+    train_data = KGTripleDataset(split='train')
+    val_data = KGTripleDataset(split='val')
+    test_data = KGTripleDataset(split='test')
+    all_data = KGTripleDataset(split='all')
+    print(len(train_data))
+    print(len(val_data))
+    print(len(test_data))
+    print(len(all_data))
