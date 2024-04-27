@@ -15,21 +15,20 @@ class KGTripleDataset:
     def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10):
         self.root=root
         self.dataset = dataset
-        assert split in ['train', 'val', 'test', 'all'], "Invalid value for 'split'. It should be one of 'train', 'val', 'test' or 'all'."
+        assert split in ['train', 'val', 'test'], "Invalid value for 'split'. It should be one of 'train', 'val', or 'test'."
         self.split = split
         self.num_neg_per_positive = num_neg_per_positive
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
-        self.data_triples = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None).to_numpy()
-        self.train_triples = pd.read_csv(os.path.join(self.root, dataset, 'train.tsv'), sep='\t', header=None).to_numpy() # training dataset
-        self.val_triples = pd.read_csv(os.path.join(self.root, dataset, 'val.tsv'), sep='\t', header=None).to_numpy()  # validation dataset
-        self.test_triples = pd.read_csv(os.path.join(self.root, dataset, 'test.tsv'), sep='\t', header=None).to_numpy()  # validation dataset
+        all_data_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None)
+
+        data_triples_df = pd.read_csv(os.path.join(self.root, dataset, '{}.tsv'.format(split)), sep='\t', header=None)
         self.data = {
-            'all': self.data_triples,
-            'train': self.train_triples,
-            'val': self.val_triples,
-            'test': self.test_triples,
-            }
+            'head_index': data_triples_df[0].to_numpy(),
+            'rel_index': data_triples_df[1].to_numpy(),
+            'tail_index': data_triples_df[2].to_numpy(),
+            'score': data_triples_df[3].to_numpy(),
+        }
 
         # concept vocab
         self.cons = []
@@ -58,7 +57,7 @@ class KGTripleDataset:
         self.tph = np.array([0])
         tph_array = np.zeros((len(self.rels), len(self.cons)))
         hpt_array = np.zeros((len(self.rels), len(self.cons)))
-        for h_, r_, t_, w in self.data_triples:  # only training data
+        for h_, r_, t_, w in all_data_triples_df.to_numpy():  # only training data
             h, r, t = int(h_), int(r_), int(t_)
             tph_array[r][h] += 1.
             hpt_array[r][t] += 1.
