@@ -29,7 +29,7 @@ class KGTripleDataset:
             'tail_index': data_triples_df[2].to_numpy(),
             'score': data_triples_df[3].to_numpy(),
         }
-
+        
         # concept vocab
         self.cons = []
         # rel vocab
@@ -66,7 +66,7 @@ class KGTripleDataset:
         self.hpt = np.mean(hpt_array, axis=1)
 
     def __len__(self):
-        return len(self.data[self.split])
+        return len(self.data['head_index'])
 
     def num_cons(self):
         '''Returns number of ontologies.
