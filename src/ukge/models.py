@@ -218,15 +218,24 @@ class DistMult(KGEModel):
 
     def loss(
         self,
-        head_index: Tensor,
-        rel_type: Tensor,
-        tail_index: Tensor,
+        pos_hrt: Tensor, 
+        score: Tensor, 
+        neg_hn_rt: Tensor,
+        neg_hr_tn: Tensor,
     ) -> Tensor:
-        pos_score = self(head_index, rel_type, tail_index)
-        neg_score = self(*self.random_sample(head_index, rel_type, tail_index))
-        return F.margin_ranking_loss(
-            pos_score,
-            neg_score,
-            target=torch.ones_like(pos_score),
-            margin=self.margin,
-        )
+        pos_score = self(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
+
+
+
+if __name__ == "__main__":
+    from ukge.datasets import KGTripleDataset
+    from torch.utils.data import DataLoader
+    train_data = KGTripleDataset(dataset='cn15k', split='train', num_neg_per_positive=10)
+    train_dataloader = DataLoader(train_data, batch_size=8, shuffle=True)
+    pos_hrt, score, neg_hn_rt, neg_hr_tn = next(iter(train_dataloader))
+    model = DistMult(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    print(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
+    pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
+    print(pred_pos_score.shape)
+    pred_neg_hn__score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
+    print(pred_neg_hn__score.shape)

@@ -153,25 +153,6 @@ class KGTripleDataset(Dataset):
         hrnt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='t')
         return np.array([h, r, t]), np.array(s), nhrt, hrnt 
 
-
-
-
-# class KGTripleLoader(DataLoader):
-#     def __init__(self, 
-#                  dataset: KGTripleDataset,
-#                  **kwargs):
-#         self.dataset = dataset
-#         super().__init__(range(self.dataset.len()), collate_fn=self.sample, **kwargs)
-
-
-#     def sample(self, index: List[int]) -> Tuple[Tensor, Tensor, Tensor]:
-#         index = torch.tensor(index, device=self.head_index.device)
-#         head_index = self.head_index[index]
-#         rel_index = self.rel_index[index]
-#         tail_index = self.tail_index[index]
-#         score = self.scores[index]
-#         return head_index, rel_index, tail_index, score
-    
 if __name__ == "__main__":
     train_data = KGTripleDataset(split='train')
     val_data = KGTripleDataset(split='val')
@@ -188,6 +169,6 @@ if __name__ == "__main__":
 
     train_dataloader = DataLoader(train_data, batch_size=4, shuffle=True)
     hrt, s, nhrt, hrnt = next(iter(train_dataloader))
-    print(hrt, s)
-    print(nhrt)
-    print(hrnt)
+    print(hrt.shape, s.shape)
+    print(nhrt.shape)
+    print(hrnt.shape)
