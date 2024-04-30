@@ -192,13 +192,9 @@ class DistMult(KGEModel):
         num_nodes: int,
         num_relations: int,
         hidden_channels: int,
-        margin: float = 1.0,
         sparse: bool = False,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
-
-        self.margin = margin
-
         self.reset_parameters()
 
     def reset_parameters(self):
