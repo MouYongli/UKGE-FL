@@ -5,10 +5,27 @@ import numpy as np
 import argparse
 
 import torch
+from torch.utils.data import DataLoader
 
+from ukge.datasets import KGTripleDataset
+from ukge.models import TransE, DistMult
+model_map = {
+    'transe': TransE,
+    'distmult': DistMult,
+}
 
 
 def main():
-    parse = argparse.ArgumentParser()
-
-    args = parse.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', choices=['transe', 'distmult'], type=str.lower, required=True)
+    parser.add_argument('--dataset', choices=['cn15k', 'nl27k', 'ppi5k'], type=str.lower, required=True)
+    parser.add_argument('--num_neg_per_positive', default=8, type=int)
+    parser.add_argument('--batch_size', default=16, type=int)
+    args = parser.parse_args()
+    
+    train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
+    val_dataset = KGTripleDataset(dataset=args.dataset, split='val', num_neg_per_positive=args.num_neg_per_positive)
+    test_dataset = KGTripleDataset(dataset=args.dataset, split='test', num_neg_per_positive=args.num_neg_per_positive)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)

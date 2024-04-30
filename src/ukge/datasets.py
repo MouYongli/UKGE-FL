@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 here = osp.dirname(osp.abspath(__file__))
 data_path = osp.join(here, '../..', 'data')
 
-class KGTripleDataset:
+class KGTripleDataset(Dataset):
     def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10):
         self.root=root
         self.dataset = dataset
@@ -64,9 +64,6 @@ class KGTripleDataset:
             self.triples_record.add((h, r, t))
         self.tph = np.mean(tph_array, axis=1)
         self.hpt = np.mean(hpt_array, axis=1)
-
-    def __len__(self):
-        return len(self.data['head_index'])
 
     def num_cons(self):
         '''Returns number of ontologies.
@@ -146,31 +143,51 @@ class KGTripleDataset:
     def corrupt_batch(self, t_batch, neg_per_positive, tar=None):
         res = np.array([self.corrupt(triple, neg_per_positive, tar) for triple in t_batch])
         return res
+    
+    def __len__(self):
+        return len(self.data['head_index'])
+    
+    def __getitem__(self, idx):
+        h, r, t, s = self.data['head_index'][idx], self.data['rel_index'][idx], self.data['tail_index'][idx], self.data['score'][idx]
+        nhrt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='h')
+        hrnt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='t')
+        return np.array([h, r, t]), np.array(s), nhrt, hrnt 
 
 
 
-class KGTripleLoader(DataLoader):
-    def __init__(self, 
-                 dataset: KGTripleDataset,
-                 **kwargs):
-        self.dataset = dataset
-        super().__init__(range(self.dataset.len()), collate_fn=self.sample, **kwargs)
+
+# class KGTripleLoader(DataLoader):
+#     def __init__(self, 
+#                  dataset: KGTripleDataset,
+#                  **kwargs):
+#         self.dataset = dataset
+#         super().__init__(range(self.dataset.len()), collate_fn=self.sample, **kwargs)
 
 
-    def sample(self, index: List[int]) -> Tuple[Tensor, Tensor, Tensor]:
-        index = torch.tensor(index, device=self.head_index.device)
-        head_index = self.head_index[index]
-        rel_index = self.rel_index[index]
-        tail_index = self.tail_index[index]
-        score = self.scores[index]
-        return head_index, rel_index, tail_index, score
+#     def sample(self, index: List[int]) -> Tuple[Tensor, Tensor, Tensor]:
+#         index = torch.tensor(index, device=self.head_index.device)
+#         head_index = self.head_index[index]
+#         rel_index = self.rel_index[index]
+#         tail_index = self.tail_index[index]
+#         score = self.scores[index]
+#         return head_index, rel_index, tail_index, score
     
 if __name__ == "__main__":
     train_data = KGTripleDataset(split='train')
     val_data = KGTripleDataset(split='val')
     test_data = KGTripleDataset(split='test')
-    all_data = KGTripleDataset(split='all')
     print(len(train_data))
     print(len(val_data))
     print(len(test_data))
-    print(len(all_data))
+
+    # print(train_data.num_cons(), train_data.num_rels())
+    # hrt, s, nhrt, hrnt = train_data[0]
+    # print(hrt, s)
+    # print(nhrt)
+    # print(hrnt)
+
+    train_dataloader = DataLoader(train_data, batch_size=4, shuffle=True)
+    hrt, s, nhrt, hrnt = next(iter(train_dataloader))
+    print(hrt, s)
+    print(nhrt)
+    print(hrnt)

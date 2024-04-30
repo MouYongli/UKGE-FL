@@ -3,8 +3,68 @@ import math
 import torch
 import torch.nn.functional as F
 from torch import Tensor
+from torch.nn import Embedding
 
-from torch_geometric.nn.kge import KGEModel
+class KGEModel(torch.nn.Module):
+    r"""An abstract base class for implementing custom KGE models.
+
+    Args:
+        num_nodes (int): The number of nodes/entities in the graph.
+        num_relations (int): The number of relations in the graph.
+        hidden_channels (int): The hidden embedding size.
+        sparse (bool, optional): If set to :obj:`True`, gradients w.r.t. to the
+            embedding matrices will be sparse. (default: :obj:`False`)
+    """
+    def __init__(
+        self,
+        num_nodes: int,
+        num_relations: int,
+        hidden_channels: int,
+        sparse: bool = False,
+    ):
+        super().__init__()
+
+        self.num_nodes = num_nodes
+        self.num_relations = num_relations
+        self.hidden_channels = hidden_channels
+
+        self.node_emb = Embedding(num_nodes, hidden_channels, sparse=sparse)
+        self.rel_emb = Embedding(num_relations, hidden_channels, sparse=sparse)
+
+    def reset_parameters(self):
+        r"""Resets all learnable parameters of the module."""
+        self.node_emb.reset_parameters()
+        self.rel_emb.reset_parameters()
+
+    def forward(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        r"""Returns the score for the given triplet.
+
+        Args:
+            head_index (torch.Tensor): The head indices.
+            rel_type (torch.Tensor): The relation type.
+            tail_index (torch.Tensor): The tail indices.
+        """
+        raise NotImplementedError
+
+    def loss(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        r"""Returns the loss value for the given triplet.
+
+        Args:
+            head_index (torch.Tensor): The head indices.
+            rel_type (torch.Tensor): The relation type.
+            tail_index (torch.Tensor): The tail indices.
+        """
+        raise NotImplementedError
 
 
 class TransE(KGEModel):
@@ -97,8 +157,6 @@ class TransE(KGEModel):
             target=torch.ones_like(pos_score),
             margin=self.margin,
         )
-    
-
 
 
 class DistMult(KGEModel):
