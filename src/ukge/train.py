@@ -8,16 +8,19 @@ import torch
 from torch.utils.data import DataLoader
 
 from ukge.datasets import KGTripleDataset
-from ukge.models import TransE, DistMult
+from ukge.models import DistMult
 model_map = {
-    'transe': TransE,
     'distmult': DistMult,
 }
+
+from ukge.losses import PSL
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', choices=['transe', 'distmult'], type=str.lower, required=True)
+    parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
+    parser.add_argument('--model_type', type=str.lower, default='logi', choices=['logi', 'rect'])
+    parser.add_argument('--loss_type', type=str.lower, default='logi', choices=['', 'rect'])
     parser.add_argument('--dataset', choices=['cn15k', 'nl27k', 'ppi5k'], type=str.lower, required=True)
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
