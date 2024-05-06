@@ -40,11 +40,12 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim).to(device)
+    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
 
 
 
     #以下是训练部分
+    
     #准备数据集（dataloader加载
     #创建model（就是model.py里定义的
     #设置参数(args里定义
@@ -53,21 +54,11 @@ def main():
     #训练-传入预测的fl和target的sl，计算loss，backward，opt
 
 
-
-    train_dataset = KGTripleDataset(dataset='cn15k', split='train', num_neg_per_positive=10)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
         
-    #数据集（dataloader加载
-    train_dataset = KGTripleDataset(dataset='cn15k', split='train', num_neg_per_positive=10)
-    train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True)
+    #数据集（dataloader加载(前边定义了
 
-    #模型
-    model = DistMult(
-        num_nodes=train_dataset.num_cons(),
-        num_relations=train_dataset.num_rels(),
-        hidden_channels=args.hidden_dim,
-        model_type='logi',  # 选择"logi"或"rect"
-    )
+    #模型(前边定义了
+
 
     #loss和optimizer
     criterion = nn.MSELoss()
@@ -78,7 +69,7 @@ def main():
         model.train()  
         total_loss = 0
 
-        for batch in train_loader:
+        for batch in train_dataloader:
             pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = batch
             
             #正样本fl
@@ -102,7 +93,7 @@ def main():
             
             total_loss += loss.item()
 
-        print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {total_loss / len(train_loader):.4f}")
+        print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {total_loss / len(train_dataloader):.4f}")
 
 
 if __name__ == "__main__":
