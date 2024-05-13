@@ -153,6 +153,84 @@ class KGTripleDataset(Dataset):
         hrnt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='t')
         return np.array([h, r, t]), np.array(s), nhrt, hrnt 
 
+class KGPSLTripleDataset(Dataset):
+    def __init__(self, root: str=data_path, dataset: str='cn15k'):
+        self.root=root
+        self.dataset = dataset
+        self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
+        self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
+        psl_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'psl.tsv'), sep='\t', header=None)
+        self.data = {
+            'head_index': psl_triples_df[0].to_numpy(),
+            'rel_index': psl_triples_df[1].to_numpy(),
+            'tail_index': psl_triples_df[2].to_numpy(),
+            'score': psl_triples_df[3].to_numpy(),
+        }
+        
+        # concept vocab
+        self.cons = []
+        # rel vocab
+        self.rels = []
+        # transitive rels vocab
+        self.index_cons = {}  # {string: index}
+        self.index_rels = {}  # {string: index}
+        
+        # Load data into cons and index_cons
+        for _, row in self.entity_id.iterrows():
+            # Add entity to cons list
+            self.cons.append(row['entity string'])
+            # Add entity and id mapping to index_cons dictionary
+            self.index_cons[row['entity string']] = row['id']
+        # Load data into rels and index_rels
+        for _, row in self.relation_id.iterrows():
+            # Add entity to cons list
+            self.rels.append(row['relation string'])
+            # Add entity and id mapping to index_cons dictionary
+            self.index_rels[row['relation string']] = row['id']
+
+    def num_cons(self):
+        '''Returns number of ontologies.
+
+        This means all ontologies have index that 0 <= index < num_onto().
+        '''
+        return len(self.cons)
+
+    def num_rels(self):
+        '''Returns number of relations.
+
+        This means all relations have index that 0 <= index < num_rels().
+        Note that we consider *ALL* relations, e.g. $R_O$, $R_h$ and $R_{tr}$.
+        '''
+        return len(self.rels)
+
+    def rel_str2index(self, rel_str):
+        '''For relation `rel_str` in string, returns its index.
+
+        This is not used in training, but can be helpful for visualizing/debugging etc.'''
+        return self.index_rels.get(rel_str)
+
+    def rel_index2str(self, rel_index):
+        '''For relation `rel_index` in int, returns its string.
+
+        This is not used in training, but can be helpful for visualizing/debugging etc.'''
+        return self.rels[rel_index]
+
+    def con_str2index(self, con_str):
+        '''For ontology `con_str` in string, returns its index.
+
+        This is not used in training, but can be helpful for visualizing/debugging etc.'''
+        return self.index_cons.get(con_str)
+    
+    def __len__(self):
+        return len(self.data['head_index'])
+    
+    def __getitem__(self, idx) -> Any:
+        h, r, t, s = self.data['head_index'][idx], self.data['rel_index'][idx], self.data['tail_index'][idx], self.data['score'][idx]
+        return np.array([h, r, t]), np.array(s)
+    
+
+        
+
 if __name__ == "__main__":
     train_data = KGTripleDataset(split='train')
     val_data = KGTripleDataset(split='val')
