@@ -8,6 +8,8 @@ We use three uncertain knowledge graph:
 - NL27k
 - PPI5k
 
+downdgoqng
+
 ## Python Environment Setup
 
 1. conda environment
