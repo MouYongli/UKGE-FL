@@ -18,6 +18,7 @@ model_map = {
 
 from ukge.losses import PSL
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
@@ -36,6 +37,7 @@ def main():
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val', num_neg_per_positive=args.num_neg_per_positive)
     test_dataset = KGTripleDataset(dataset=args.dataset, split='test', num_neg_per_positive=args.num_neg_per_positive)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    #需要一个psl_dataloader
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
 
@@ -49,6 +51,7 @@ def main():
     #准备数据集（dataloader加载
     #创建model（就是model.py里定义的
     #设置参数(args里定义
+    
     #损失函数
     #优化器
     #训练-传入预测的fl和target的sl，计算loss，backward，opt
@@ -62,6 +65,12 @@ def main():
 
     #loss和optimizer
     criterion = nn.MSELoss()
+    def compute_psl_loss(self): 
+        self.prior_psl0 = torch.tensor(self._prior_psl, dtype=torch.float32)
+        self.psl_error_each = torch.square(torch.max(self.soft_w + self.prior_psl0 - self.psl_prob, torch.tensor(0)))
+        self.psl_mse = torch.mean(self.psl_error_each)
+        self.psl_loss = self.psl_mse * self._p_psl
+
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     #训练
@@ -69,23 +78,32 @@ def main():
         model.train()  
         total_loss = 0
 
-        for batch in train_dataloader:
+        for batch_psl, batch in zip(psl_dataloader, train_dataloader): #需要创建一个psl_dataloader 
+            psl_hrt, psl_score = batch_psl
             pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = batch
             
-            #正样本fl
+            # PSL的fl
+            psl_prob = model(psl_hrt[:,0], psl_hrt[:,1], psl_hrt[:,2])
+            # 正样本的fl
             pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
-            #负样本hn和tn的fl
+            # 负样本hn和tn的fl
             pred_neg_hn_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
             pred_neg_tn_score = model(neg_hr_tn[:, :, 0], neg_hr_tn[:, :, 1], neg_hr_tn[:, :, 2])
             
-            #target
+            # PSL的target
+            psl_target = psl_score
+            # Dataset的target
             pos_target = pos_score
             neg_target = torch.zeros_like(pred_neg_hn_score)
 
-            #计算损失
+
+            # PSLloss
+            psl_loss = compute_psl_loss()
+            
+            # loss
             pos_loss = criterion(pred_pos_score, pos_target)
-            neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2  #loss取hn和tn的均值（？
-            loss = pos_loss + neg_loss
+            neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2
+            loss = pos_loss + neg_loss + psl_loss
             
             optimizer.zero_grad()
             loss.backward()
@@ -98,4 +116,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
