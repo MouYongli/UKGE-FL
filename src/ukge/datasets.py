@@ -21,6 +21,7 @@ class KGTripleDataset(Dataset):
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
         all_data_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None)
+   
 
         data_triples_df = pd.read_csv(os.path.join(self.root, dataset, '{}.tsv'.format(split)), sep='\t', header=None)
         self.data = {

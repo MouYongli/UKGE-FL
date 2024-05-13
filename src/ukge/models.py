@@ -125,5 +125,5 @@ if __name__ == "__main__":
     print(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
     pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
     print(pred_pos_score.shape)
-    pred_neg_hn__score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
-    print(pred_neg_hn__score.shape)
+    pred_neg_hn_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
+    print(pred_neg_hn_score.shape)
