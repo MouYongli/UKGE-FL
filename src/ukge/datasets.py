@@ -149,10 +149,14 @@ class KGTripleDataset(Dataset):
         return len(self.data['head_index'])
     
     def __getitem__(self, idx):
-        h, r, t, s = self.data['head_index'][idx], self.data['rel_index'][idx], self.data['tail_index'][idx], self.data['score'][idx]
+        h = self.data['head_index'][idx].astype(np.float32)
+        r = self.data['rel_index'][idx].astype(np.float32)
+        t = self.data['tail_index'][idx].astype(np.float32)
+        s = self.data['score'][idx].astype(np.float32)
         nhrt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='h')
         hrnt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='t')
-        return np.array([h, r, t]), np.array(s), nhrt, hrnt 
+        return np.array([h, r, t]), np.array(s), nhrt, hrnt
+
 
 class KGPSLTripleDataset(Dataset):
     def __init__(self, root: str=data_path, dataset: str='cn15k'):
@@ -160,7 +164,7 @@ class KGPSLTripleDataset(Dataset):
         self.dataset = dataset
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
-        psl_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'psl.tsv'), sep='\t', header=None)
+        psl_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'softlogic.tsv'), sep='\t', header=None)
         self.data = {
             'head_index': psl_triples_df[0].to_numpy(),
             'rel_index': psl_triples_df[1].to_numpy(),
@@ -226,8 +230,12 @@ class KGPSLTripleDataset(Dataset):
         return len(self.data['head_index'])
     
     def __getitem__(self, idx) -> Any:
-        h, r, t, s = self.data['head_index'][idx], self.data['rel_index'][idx], self.data['tail_index'][idx], self.data['score'][idx]
+        h = self.data['head_index'][idx].astype(np.float32)
+        r = self.data['rel_index'][idx].astype(np.float32)
+        t = self.data['tail_index'][idx].astype(np.float32)
+        s = self.data['score'][idx].astype(np.float32)
         return np.array([h, r, t]), np.array(s)
+
     
 
         
@@ -236,9 +244,11 @@ if __name__ == "__main__":
     train_data = KGTripleDataset(split='train')
     val_data = KGTripleDataset(split='val')
     test_data = KGTripleDataset(split='test')
+    psl_data = KGPSLTripleDataset()
     print(len(train_data))
     print(len(val_data))
     print(len(test_data))
+    print("这是psldata=", len(psl_data))
 
     # print(train_data.num_cons(), train_data.num_rels())
     # hrt, s, nhrt, hrnt = train_data[0]

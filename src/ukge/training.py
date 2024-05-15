@@ -10,13 +10,14 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from ukge.datasets import KGTripleDataset
+from ukge.datasets import KGPSLTripleDataset
 from ukge.models import DistMult
+from ukge.losses import compute_psl_loss
 
 model_map = {
     'distmult': DistMult,
 }
 
-from ukge.losses import PSL
 
 
 def main():
@@ -24,7 +25,7 @@ def main():
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
     parser.add_argument('--model_type', type=str.lower, default='logi', choices=['logi', 'rect'])
     parser.add_argument('--loss_type', type=str.lower, default='logi', choices=['', 'rect'])
-    parser.add_argument('--dataset', choices=['cn15k', 'nl27k', 'ppi5k'], type=str.lower, required=True)
+    parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
@@ -37,12 +38,21 @@ def main():
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val', num_neg_per_positive=args.num_neg_per_positive)
     test_dataset = KGTripleDataset(dataset=args.dataset, split='test', num_neg_per_positive=args.num_neg_per_positive)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    #需要一个psl_dataloader
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
 
+    psl_dataset = KGPSLTripleDataset(dataset=args.dataset)
+
+    # 因为要用zip尽量保持batch数量一致，这里计算psl的batch_size
+    psl_batch_size = int(len(psl_dataset) / len(train_dataset) * args.batch_size)
+    psl_dataloader = DataLoader(psl_dataset, batch_size=psl_batch_size, shuffle=True)
+
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
+    # PSL的模型（？
+    model_psl = model_map[args.model](num_nodes=psl_dataset.num_cons(), num_relations=psl_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
+
 
 
 
@@ -65,12 +75,6 @@ def main():
 
     #loss和optimizer
     criterion = nn.MSELoss()
-    def compute_psl_loss(self): 
-        self.prior_psl0 = torch.tensor(self._prior_psl, dtype=torch.float32)
-        self.psl_error_each = torch.square(torch.max(self.soft_w + self.prior_psl0 - self.psl_prob, torch.tensor(0)))
-        self.psl_mse = torch.mean(self.psl_error_each)
-        self.psl_loss = self.psl_mse * self._p_psl
-
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     #训练
@@ -78,17 +82,17 @@ def main():
         model.train()  
         total_loss = 0
 
-        for batch_psl, batch in zip(psl_dataloader, train_dataloader): #需要创建一个psl_dataloader 
+        for batch_psl, batch in zip(psl_dataloader, train_dataloader): 
             psl_hrt, psl_score = batch_psl
             pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = batch
             
             # PSL的fl
-            psl_prob = model(psl_hrt[:,0], psl_hrt[:,1], psl_hrt[:,2])
+            psl_prob = model_psl(psl_hrt[:, 0].long(), psl_hrt[:, 1].long(), psl_hrt[:, 2].long())
             # 正样本的fl
-            pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
+            pred_pos_score = model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
             # 负样本hn和tn的fl
-            pred_neg_hn_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
-            pred_neg_tn_score = model(neg_hr_tn[:, :, 0], neg_hr_tn[:, :, 1], neg_hr_tn[:, :, 2])
+            pred_neg_hn_score = model(neg_hn_rt[:,:,0].long(), neg_hn_rt[:,:,1].long(), neg_hn_rt[:,:,2].long())
+            pred_neg_tn_score = model(neg_hr_tn[:, :, 0].long(), neg_hr_tn[:, :, 1].long(), neg_hr_tn[:, :, 2].long())
             
             # PSL的target
             psl_target = psl_score
@@ -98,7 +102,7 @@ def main():
 
 
             # PSLloss
-            psl_loss = compute_psl_loss()
+            psl_loss = compute_psl_loss(psl_prob, psl_score)
             
             # loss
             pos_loss = criterion(pred_pos_score, pos_target)
