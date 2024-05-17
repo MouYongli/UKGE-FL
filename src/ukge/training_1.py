@@ -91,7 +91,10 @@ class Trainer(object):
 
     def validate(self):
         self.model.eval()
-        total_loss = 0
+        mse = 0.0
+        mae = 0.0
+        num_samples = 0
+
         criterion = nn.MSELoss()
         with torch.no_grad():
             for batch in self.val_dataloader:
@@ -100,17 +103,22 @@ class Trainer(object):
                 pos_hrt, pos_score = pos_hrt.to(self.device), pos_score.to(self.device)
                 neg_hn_rt, neg_hr_tn = neg_hn_rt.to(self.device), neg_hr_tn.to(self.device)
 
-                pred_pos_score = self.model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
-                pred_neg_hn_score = self.model(neg_hn_rt[:,:,0].long(), neg_hn_rt[:,:,1].long(), neg_hn_rt[:,:,2].long())
+                pred_pos_score = self.model(pos_hrt[:, 0].long(), pos_hrt[:, 1].long(), pos_hrt[:, 2].long())
+                pred_neg_hn_score = self.model(neg_hn_rt[:, :, 0].long(), neg_hn_rt[:, :, 1].long(), neg_hn_rt[:, :, 2].long())
                 pred_neg_tn_score = self.model(neg_hr_tn[:, :, 0].long(), neg_hr_tn[:, :, 1].long(), neg_hr_tn[:, :, 2].long())
 
                 pos_loss = criterion(pred_pos_score, pos_score)
                 neg_loss = (criterion(pred_neg_hn_score, torch.zeros_like(pred_neg_hn_score)) + criterion(pred_neg_tn_score, torch.zeros_like(pred_neg_tn_score))) / 2
                 loss = pos_loss + neg_loss
-                total_loss += loss.item()
 
-        avg_val_loss = total_loss / len(self.val_dataloader)
-        return avg_val_loss
+                mse += torch.nn.functional.mse_loss(pred_pos_score, pos_score, reduction='sum').item()
+                mae += torch.nn.functional.l1_loss(pred_pos_score, pos_score, reduction='sum').item()
+                num_samples += pos_score.size(0)
+
+        mse /= num_samples
+        mae /= num_samples
+
+        return mse, mae
 
 def main():
     parser = argparse.ArgumentParser()
