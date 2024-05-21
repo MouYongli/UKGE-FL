@@ -83,11 +83,10 @@ class Trainer(object):
             if (epoch + 1) % 10 == 0:
                 val_loss = self.validate()
                 val_losses.append(val_loss)
-                print(f"Validation Loss after epoch [{epoch + 1}/{self.num_epochs}]: {val_loss:.4f}")
-
+                print(f"Validation Loss after epoch [{epoch + 1}/{self.num_epochs}]: {val_loss[0]:.4f}") 
         torch.save(self.model.state_dict(), 'model_final.pth')
         pd.DataFrame(train_losses, columns=['train_loss']).to_csv('training_loss.csv', index=False)
-        pd.DataFrame(val_losses, columns=['val_loss']).to_csv('validation_loss.csv', index=False)
+        pd.DataFrame(val_losses, columns=['val_loss', 'mse loss', 'mae loss']).to_csv('validation_loss.csv', index=False)
 
     def validate(self):
         self.model.eval()
@@ -118,7 +117,7 @@ class Trainer(object):
         mse /= num_samples
         mae /= num_samples
 
-        return mse, mae
+        return loss, mse, mae
 
 def main():
     parser = argparse.ArgumentParser()
