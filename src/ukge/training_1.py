@@ -28,9 +28,14 @@ class Trainer(object):
         self.model = None
         self.validator = None
 
-    def build(self, train_dataset, val_dataset, model_name, model_psl):
+
+    def build(self, train_dataset, val_dataset, psl_dataset, model_name, model_psl):
+        # 先定义psl_batch_size
+        self.psl_batch_size = int(len(psl_dataset) / len(train_dataset) * self.batch_size)
+
         self.train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
         self.val_dataloader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=True)
+        self.psl_dataloader = DataLoader(psl_dataset, batch_size=self.psl_batch_size, shuffle=True)
         self.model = model_map[model_name](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=self.dim, model_type=self.model_type).to(self.device)
         self.model_psl = model_psl.to(self.device)
 
@@ -136,13 +141,13 @@ def main():
     psl_dataset = KGPSLTripleDataset(dataset=args.dataset)
 
     # 因为要用zip尽量保持batch数量一致，这里计算psl的batch_size
-    psl_batch_size = int(len(psl_dataset) / len(train_dataset) * args.batch_size)
-    psl_dataloader = DataLoader(psl_dataset, batch_size=psl_batch_size, shuffle=True)
+    # psl_batch_size = int(len(psl_dataset) / len(train_dataset) * args.batch_size)
+    # psl_dataloader = DataLoader(psl_dataset, batch_size=psl_batch_size, shuffle=True)
 
     trainer = Trainer(args)
     model_psl = model_map[args.model](num_nodes=psl_dataset.num_cons(), num_relations=psl_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(trainer.device)
-    trainer.psl_dataloader = psl_dataloader
-    trainer.build(train_dataset, val_dataset, args.model, model_psl)
+    # trainer.psl_dataloader = psl_dataloader
+    trainer.build(train_dataset, val_dataset, psl_dataset, args.model, model_psl)
     trainer.train()
 
 if __name__ == "__main__":
