@@ -13,7 +13,7 @@ from ukge.models import DistMult
 from ukge.losses import compute_psl_loss
 
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter("runs/ukge_training_1")
+
 
 model_map = {
     'distmult': DistMult,
@@ -47,6 +47,10 @@ class Trainer(object):
         criterion = nn.MSELoss()
         train_losses = []
         val_losses = []
+        log_dir = f'runs/bs_{self.batch_size}_lr_{self.lr}'
+        writer = SummaryWriter(log_dir=log_dir)
+
+
 
         for epoch in range(self.num_epochs):
             self.model.train()
@@ -158,6 +162,9 @@ def main():
     # trainer.psl_dataloader = psl_dataloader
     trainer.build(train_dataset, val_dataset, psl_dataset, args.model, model_psl)
     trainer.train()
+
+
+
 
 if __name__ == "__main__":
     main()
