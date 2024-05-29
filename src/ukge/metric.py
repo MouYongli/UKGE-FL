@@ -1,3 +1,306 @@
+import torch
+
+
+import torch.nn as nn
+import torch.optim as optim
+
+class Validator(object):
+    class IndexScore:
+        """
+        The score of a tail when h and r is given.
+        It's used in the ranking task to facilitate comparison and sorting.
+        Print w as 3 digit precision float.
+        """
+        def __init__(self, index, score):
+            self.index = index
+            self.score = score
+            
+        def __lt__(self, other):
+            return self.score < other.score
+            
+        def __repr__(self):
+            return f"IndexScore(index={self.index}, score={self.score})"
+            
+        def __str__(self):
+            return f"IndexScore(index={self.index}, score={self.score})"
+            
+    def __init__(self):
+        self.model = None
+        self.this_data = None
+        self.vec_c = torch.tensor([0])
+        self.vec_r = torch.tensor([0])
+        # below for test data
+        self.test_triples = torch.tensor([0])
+        self.test_triples_group = {}
+        
+    # abstract method
+    def build_by_var(self, test_data, tf_model, this_data, sess):
+        raise NotImplementedError("Fatal Error: This model' validator didn't implement its build_by_var() function!")
+        
+    def load_hr_map(self, data_dir, hr_base_file, supplement_t_files, splitter='\t', line_end='\n'):
+        """
+        Initialize self.hr_map.
+        Load self.hr_map={h:{r:t:w}}}, not restricted to test data
+        :param hr_base_file: Get self.hr_map={h:r:{t:w}}} from the file.
+        :param supplement_t_files: Add t(only t) to self.hr_map. Don't add h or r.
+        :return:
+        """
+        self.hr_map = {}
+        with open(join(data_dir, hr_base_file)) as f:
+            pass
+            
+        count = 0
+        for h in self.hr_map:
+            pass
+            
+        print('Loaded ranking test queries. Number of (h,r,?t) queries: %d' % count)
+        for file in supplement_t_files:
+            pass
+            
+    def save_hr_map(self, outputfile):
+        """
+        Print to file for debugging. (not applicable for reloading)
+        Prerequisite: self.hr_map has been loaded.
+        :param outputfile:
+        :return:
+        """
+        if self.hr_map is None:
+            pass
+            
+        with open(outputfile, 'w') as f:
+            pass
+            
+    def load_test_data(self, filename, splitter='\t', line_end='\n'):
+        num_lines = 0
+        triples = []
+        for line in open(filename):
+            pass
+            
+        # Note: test_triples will be a torch.float64 tensor! (because of the type of w)
+        # Take care of the type of hrt when unpacking.
+        self.test_triples = torch.tensor(triples)
+        print("Loaded test data from %s, %d out of %d." % (filename, len(triples), num_lines))
+        
+    def con_index2vec(self, c):
+        return self.vec_c[c]
+    
+    def rel_index2vec(self, r):
+        return self.vec_r[r]
+    
+    def con_index2str(self, str):
+        return self.this_data.con_index2str(str)
+    
+    def rel_index2str(self, str):
+        return self.this_data.rel_index2str(str)
+    
+    def vecs_from_triples(self, h, r, t):
+        """
+        :param h,r,t: int index
+        :return: h_vec, r_vec, t_vec
+        """
+        h, r, t = torch.tensor([h]), torch.tensor([r]), torch.tensor([t])  # just in case of float
+        hvec = self.con_index2vec(h)
+        rvec = self.rel_index2vec(r)
+        tvec = self.con_index2vec(t)
+        return hvec, rvec, tvec
+    
+    # Abstract method. Different scoring function for different models.
+    def get_score(self, h, r, t):
+        raise NotImplementedError("get_score() is not defined in this model's validator")
+    
+    # Abstract method. Different scoring function for different models.
+    def get_score_batch(self, h_batch, r_batch, t_batch, isneg2Dbatch=False):
+        raise NotImplementedError("get_score_batch() is not defined in this model's validator")
+    
+    def get_mse(self, toprint=False, save_dir='', epoch=0):
+        test_triples = self.test_triples
+        N = test_triples.shape[0]
+        # existing triples
+        # (score - w)^2
+        h_batch = test_triples[:, 0].long()
+        r_batch = test_triples[:, 1].long()
+        t_batch = test_triples[:, 2].long()
+        w_batch = test_triples[:, 3]
+        scores = self.get_score_batch(h_batch, r_batch, t_batch)
+        mse = torch.sum(torch.square(scores - w_batch))
+        mse = mse / N
+        return mse
+    
+    def get_mae(self, toprint=False, save_dir='', epoch=0):
+        test_triples = self.test_triples
+        N = test_triples.shape[0]
+        # existing triples
+        # (score - w)^2
+        h_batch = test_triples[:, 0].long()
+        r_batch = test_triples[:, 1].long()
+        t_batch = test_triples[:, 2].long()
+        w_batch = test_triples[:, 3]
+        scores = self.get_score_batch(h_batch, r_batch, t_batch)
+        mae = torch.sum(torch.abs(scores - w_batch))
+        mae = mae / N
+        return mae
+    
+    def con_index2vec_batch(self, indices):
+        return torch.squeeze(self.vec_c[indices, :])
+    
+    def rel_index2vec_batch(self, indices):
+        return torch.squeeze(self.vec_r[indices, :])
+    
+    def get_t_ranks(self, h, r, ts):
+        """
+        Given some t index, return the ranks for each t
+        :return:
+        """
+        # prediction
+        scores = torch.tensor([self.get_score(h, r, t) for t in ts])  # predict scores for t from ground truth，ts为groundtruth降序排列时t的index（在下边定义
+        ranks = torch.ones(len(ts), dtype=torch.int)  # initialize rank as all 1
+        N = self.vec_c.shape[0]  # pool of t: all concept vectors
+        for i in range(N):  
+            pass
+        return ranks
+    
+    def ndcg(self, h, r, tw_truth):
+        """
+        Compute nDCG(normalized discounted cummulative gain)
+        sum(score_ground_truth / log2(rank+1)) / max_possible_dcg
+        :param tw_truth: [IndexScore1, IndexScore2, ...], soreted by IndexScore.score descending
+        :return:
+        """
+        # prediction
+        ts = [tw.index for tw in tw_truth]
+        ranks = self.get_t_ranks(h, r, ts) #predict scores的rank
+        # linear gain
+        gains = torch.tensor([tw.score for tw in tw_truth])
+        discounts = torch.log2(ranks + 1)
+        discounted_gains = gains / discounts
+        dcg = torch.sum(discounted_gains)  # discounted cumulative gain
+        # normalize
+        max_possible_dcg = torch.sum(gains / torch.log2(torch.arange(len(gains)) + 2))  # when ranks = [1, 2, ...len(truth)]
+        ndcg = dcg / max_possible_dcg  # normalized discounted cumulative gain
+        # exponential gain
+        exp_gains = torch.tensor([2 ** tw.score - 1 for tw in tw_truth])
+        exp_discounted_gains = exp_gains / discounts
+        exp_dcg = torch.sum(exp_discounted_gains)
+        # normalize
+        exp_max_possible_dcg = torch.sum(
+            exp_gains / torch.log2(torch.arange(len(exp_gains)) + 2))  # when ranks = [1, 2, ...len(truth)]
+        exp_ndcg = exp_dcg / exp_max_possible_dcg  # normalized discounted cumulative gain
+        return ndcg, exp_ndcg
+    
+    def mean_ndcg(self, hr_map):
+        """
+        :param hr_map: {h:{r:{t:w}}}
+        :return:
+        """
+        ndcg_sum = 0  # nDCG with linear gain
+        exp_ndcg_sum = 0  # nDCG with exponential gain
+        count = 0
+        t0 = time.time()
+        # debug ndcg
+        res = []  # [(h,r,tw_truth, ndcg)]
+        for h in hr_map:
+            pass
+        return ndcg_sum, exp_ndcg_sum
+    
+    def get_fixed_hr(self, outputdir=None, n=500):
+        hr_map500 = {}
+        dict_keys = []
+        for h in self.hr_map.keys():
+            pass
+        dict_keys = sorted(dict_keys, key=lambda x: len(self.hr_map[x[0]][x[1]]), reverse=True)
+        dict_final_keys = []
+        for i in range(2525):
+            pass
+        count = 0
+        for i in range(n):
+            pass
+        for h in hr_map500.keys():
+            pass
+        self.hr_map_sub = hr_map500
+        if outputdir is not None:
+            pass
+        return hr_map500
+    
+    def classify_triples(self, confT, plausTs):
+        """
+        Classify high-confidence relation facts
+        :param confT: the threshold of ground truth confidence score
+        :param plausTs: the list of proposed thresholds of computed plausibility score
+        :return:
+        """
+        test_triples = self.test_triples
+        h_batch = test_triples[:, 0].long()
+        r_batch = test_triples[:, 1].long()
+        t_batch = test_triples[:, 2].long()
+        w_batch = test_triples[:, 3]
+        # ground truth
+        high_gt = set(torch.squeeze(torch.argwhere(w_batch > confT)))  # 获得了positive的索引（argwhere获得index，squeeze变为1维的
+        low_gt = set(torch.squeeze(torch.argwhere(w_batch <= confT)))  # 同理negative的索引
+        P = []
+        R = []
+        Acc = []
+        # prediction
+        scores = self.get_score_batch(h_batch, r_batch, t_batch)
+        print('The mean of prediced scores: %f' % torch.mean(scores))
+        # pred_thres = torch.arange(0, 1, 0.05)
+        for pthres in plausTs:
+            pass
+        P = torch.tensor(P)
+        R = torch.tensor(R)
+        F1 = 2 * torch.multiply(P, R) / (P + R)
+        Acc = torch.tensor(Acc)
+        return P, R, F1, Acc
+    
+class UKGE_LOGI_VALIDATOR(Validator):
+    def __init__(self, ):
+        Validator.__init__(self)
+        
+    # override
+    def build_by_var(self, test_data, tf_model, this_data, sess=torch.Session()):
+        """
+        use data and model in memory.
+        get self.vec_c (vectors for concepts), and self.vec_r(vectors for relations)
+        :return:
+        """
+        
+    # override
+    def get_score(self, h, r, t):
+        pass
+    
+    # override
+    def get_score_batch(self, h_batch, r_batch, t_batch, isneg2Dbatch=False):
+        pass
+    
+class UKGE_RECT_VALIDATOR(Validator):
+    def __init__(self, ):
+        pass
+        
+    # override
+    def build_by_var(self, test_data, tf_model, this_data, sess=torch.Session()):
+        pass
+    
+    # override
+    def get_score(self, h, r, t):
+        pass
+    
+    # override
+    def get_score_batch(self, h_batch, r_batch, t_batch, isneg2Dbatch=False):
+        pass
+    
+    def bound_score(self, scores):
+        pass
+    
+    def get_mse(self, toprint=False, save_dir='', epoch=0):
+        pass
+    
+    def get_mse_neg(self, neg_per_positive):
+        pass
+
+
+
+
+
+
 class Validator(object):
     class IndexScore:
         """

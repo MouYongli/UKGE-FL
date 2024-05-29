@@ -102,7 +102,7 @@ def main():
 
 
             # PSLloss
-            psl_loss = compute_psl_loss(psl_prob, psl_score)
+            psl_loss = compute_psl_loss(psl_prob, psl_target)
             
             # loss
             pos_loss = criterion(pred_pos_score, pos_target)

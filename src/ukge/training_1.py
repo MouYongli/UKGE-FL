@@ -12,6 +12,9 @@ from ukge.datasets import KGTripleDataset, KGPSLTripleDataset
 from ukge.models import DistMult
 from ukge.losses import compute_psl_loss
 
+from torch.utils.tensorboard import SummaryWriter
+writer = SummaryWriter("runs/ukge_training_1")
+
 model_map = {
     'distmult': DistMult,
 }
@@ -83,12 +86,18 @@ class Trainer(object):
 
             avg_train_loss = total_loss / len(self.train_dataloader)
             train_losses.append(avg_train_loss)
+            # val_loss = self.validate()
+            # val_losses.append(val_loss)
             print(f"Epoch [{epoch + 1}/{self.num_epochs}], Loss: {avg_train_loss:.4f}")
+            # writer.add_scalar('training loss', avg_train_loss, epoch)
+            # writer.add_scalar('validation loss', val_loss[0], epoch)
 
             if (epoch + 1) % 10 == 0:
                 val_loss = self.validate()
                 val_losses.append(val_loss)
                 print(f"Validation Loss after epoch [{epoch + 1}/{self.num_epochs}]: {val_loss[0]:.4f}") 
+                writer.add_scalar('training loss', avg_train_loss, epoch)
+                writer.add_scalar('validation loss', val_loss[0], epoch)
         torch.save(self.model.state_dict(), 'model_final.pth')
         pd.DataFrame(train_losses, columns=['train_loss']).to_csv('training_loss.csv', index=False)
         pd.DataFrame(val_losses, columns=['val_loss', 'mse loss', 'mae loss']).to_csv('validation_loss.csv', index=False)
@@ -132,7 +141,7 @@ def main():
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
-    parser.add_argument('--batch_size', default=1024, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--lr', default=0.001, type=float)
     args = parser.parse_args()
 

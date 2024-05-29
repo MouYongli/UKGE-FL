@@ -2,27 +2,8 @@ import torch
 
 def evaluate(model, dataloader, device):
     model.eval()
-    total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
 
-    with torch.no_grad():
-        for inputs, labels in dataloader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
-
-            total_loss += torch.nn.functional.cross_entropy(outputs, labels, reduction='sum').item()
-            total_correct += (predicted == labels).sum().item()
-            total_samples += labels.size(0)
-
-    avg_loss = total_loss / total_samples
-    accuracy = total_correct / total_samples
-
-    return avg_loss, accuracy
-    # Calculate MSE and MAE
+    # 计算 MSE 和 MAE
     mse = 0.0
     mae = 0.0
     num_samples = 0
@@ -39,10 +20,11 @@ def evaluate(model, dataloader, device):
     mse /= num_samples
     mae /= num_samples
 
-    # Calculate NDCG
+    # 计算 NDCG
     ndcg = calculate_ndcg(model, dataloader, device)
 
-    return avg_loss, accuracy, mse, mae, ndcg
+    return mse, mae, ndcg
+
 
 def evaluate_every_n_epochs(model, dataloader, device, n, epoch):
     if epoch % n == 0:
