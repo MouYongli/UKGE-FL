@@ -164,7 +164,7 @@ class KGValTripleDataset(Dataset):
         self.dataset = dataset
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
-        val_triples_df = pd.read_csv(os.path.join(self.root, dataset, '.tsv'), sep='\t', header=None)
+        val_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'val.tsv'), sep='\t', header=None)
         self.data = {
             'head_index': val_triples_df[0].to_numpy(),
             'rel_index': val_triples_df[1].to_numpy(),
