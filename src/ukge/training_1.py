@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import argparse
 
-from ukge.datasets import KGTripleDataset, KGPSLTripleDataset
+from ukge.datasets import KGTripleDataset, KGValTripleDataset, KGPSLTripleDataset
 from ukge.models import DistMult
 from ukge.losses import compute_psl_loss
 
@@ -90,18 +90,18 @@ class Trainer(object):
 
             avg_train_loss = total_loss / len(self.train_dataloader)
             train_losses.append(avg_train_loss)
-            # val_loss = self.validate()
-            # val_losses.append(val_loss)
+            val_loss = self.validate()
+            val_losses.append(val_loss)
             print(f"Epoch [{epoch + 1}/{self.num_epochs}], Loss: {avg_train_loss:.4f}")
-            # writer.add_scalar('training loss', avg_train_loss, epoch)
-            # writer.add_scalar('validation loss', val_loss[0], epoch)
+            writer.add_scalar('Loss/training loss', avg_train_loss, epoch)
+            writer.add_scalar('Loss/validation loss', val_loss[0], epoch)
 
             if (epoch + 1) % 10 == 0:
-                val_loss = self.validate()
-                val_losses.append(val_loss)
+                # val_loss = self.validate()
+                # val_losses.append(val_loss)
                 print(f"Validation Loss after epoch [{epoch + 1}/{self.num_epochs}]: {val_loss[0]:.4f}") 
-                writer.add_scalar('training loss', avg_train_loss, epoch)
-                writer.add_scalar('validation loss', val_loss[0], epoch)
+                # writer.add_scalar('Loss/training loss', avg_train_loss, epoch)
+                # writer.add_scalar('Loss/validation loss', val_loss[0], epoch)
         torch.save(self.model.state_dict(), 'model_final.pth')
         pd.DataFrame(train_losses, columns=['train_loss']).to_csv('training_loss.csv', index=False)
         pd.DataFrame(val_losses, columns=['val_loss', 'mse loss', 'mae loss']).to_csv('validation_loss.csv', index=False)
@@ -115,18 +115,14 @@ class Trainer(object):
         criterion = nn.MSELoss()
         with torch.no_grad():
             for batch in self.val_dataloader:
-                pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = batch
+                pos_hrt, pos_score = batch
 
                 pos_hrt, pos_score = pos_hrt.to(self.device), pos_score.to(self.device)
-                neg_hn_rt, neg_hr_tn = neg_hn_rt.to(self.device), neg_hr_tn.to(self.device)
 
                 pred_pos_score = self.model(pos_hrt[:, 0].long(), pos_hrt[:, 1].long(), pos_hrt[:, 2].long())
-                pred_neg_hn_score = self.model(neg_hn_rt[:, :, 0].long(), neg_hn_rt[:, :, 1].long(), neg_hn_rt[:, :, 2].long())
-                pred_neg_tn_score = self.model(neg_hr_tn[:, :, 0].long(), neg_hr_tn[:, :, 1].long(), neg_hr_tn[:, :, 2].long())
 
                 pos_loss = criterion(pred_pos_score, pos_score)
-                neg_loss = (criterion(pred_neg_hn_score, torch.zeros_like(pred_neg_hn_score)) + criterion(pred_neg_tn_score, torch.zeros_like(pred_neg_tn_score))) / 2
-                loss = pos_loss + neg_loss
+                loss = pos_loss
 
                 mse += torch.nn.functional.mse_loss(pred_pos_score, pos_score, reduction='sum').item()
                 mae += torch.nn.functional.l1_loss(pred_pos_score, pos_score, reduction='sum').item()
@@ -150,7 +146,7 @@ def main():
     args = parser.parse_args()
 
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
-    val_dataset = KGTripleDataset(dataset=args.dataset, split='val', num_neg_per_positive=args.num_neg_per_positive)
+    val_dataset = KGValTripleDataset(dataset=args.dataset)
     psl_dataset = KGPSLTripleDataset(dataset=args.dataset)
 
     # 因为要用zip尽量保持batch数量一致，这里计算psl的batch_size
