@@ -30,7 +30,7 @@ class Trainer(object):
         self.model_type = args.model_type
         self.model = None
         self.validator = None
-
+        self.l2_lambda = args.l2_lambda  # L2正则化系数
 
     def build(self, train_dataset, val_dataset, psl_dataset, model_name, model_psl):
         # 先定义psl_batch_size
@@ -47,7 +47,7 @@ class Trainer(object):
         criterion = nn.MSELoss()
         train_losses = []
         val_losses = []
-        log_dir = f'runs/bs_{self.batch_size}_lr_{self.lr}'
+        log_dir = f'runs/bs_{self.batch_size}_lr_{self.lr}_l2_{self.l2_lambda}'
         writer = SummaryWriter(log_dir=log_dir)
 
 
@@ -80,7 +80,14 @@ class Trainer(object):
                 psl_loss = compute_psl_loss(psl_prob, psl_target)
                 pos_loss = criterion(pred_pos_score, pos_target)
                 neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2
-                loss = pos_loss + neg_loss + psl_loss
+
+                l2_reg = torch.tensor(0., device=self.device)  # 将l2_reg初始化到设备上
+                for param in self.model.parameters():
+                    l2_reg = l2_reg + torch.norm(param, p=2)**2  # 累加L2损失(平方？
+
+                # 总损失
+                loss = pos_loss + neg_loss + psl_loss + self.l2_lambda * l2_reg
+
 
                 # Backward and optimize
                 optimizer.zero_grad()
@@ -143,6 +150,7 @@ def main():
     parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--lr', default=0.001, type=float)
+    parser.add_argument('--l2_lambda', default=0.0005, type=float)  # L2正则化系数
     args = parser.parse_args()
 
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
