@@ -16,8 +16,6 @@ model_map = {
     'distmult': DistMult,
 }
 
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
@@ -45,14 +43,11 @@ def main():
     
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-
-    for m in model.parameters():
-        print(m)
-    model.train()
-
     pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = next(iter(train_dataloader))
     pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_score.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device)
-    pred_pos_score = model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
+    # pred_pos_score = model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
+    print(pos_hrt)
+    pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
     print('pred s', pred_pos_score)
     print('gt s', pos_score)
     loss = criterion(pred_pos_score, pos_score)

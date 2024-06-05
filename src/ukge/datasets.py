@@ -149,9 +149,9 @@ class KGTripleDataset(Dataset):
         return len(self.data['head_index'])
     
     def __getitem__(self, idx):
-        h = self.data['head_index'][idx].astype(np.float32)
-        r = self.data['rel_index'][idx].astype(np.float32)
-        t = self.data['tail_index'][idx].astype(np.float32)
+        h = self.data['head_index'][idx]
+        r = self.data['rel_index'][idx]
+        t = self.data['tail_index'][idx]
         s = self.data['score'][idx].astype(np.float32)
         if self.split == 'train':
             nhrt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='h')
@@ -232,9 +232,9 @@ class KGPSLTripleDataset(Dataset):
         return len(self.data['head_index'])
     
     def __getitem__(self, idx) -> Any:
-        h = self.data['head_index'][idx].astype(np.float32)
-        r = self.data['rel_index'][idx].astype(np.float32)
-        t = self.data['tail_index'][idx].astype(np.float32)
+        h = self.data['head_index'][idx]
+        r = self.data['rel_index'][idx]
+        t = self.data['tail_index'][idx]
         s = self.data['score'][idx].astype(np.float32)
         return np.array([h, r, t]), np.array(s)
 
@@ -252,14 +252,16 @@ if __name__ == "__main__":
     print(len(test_dataset))
     print(len(psl_dataset))
 
-    # print(train_data.num_cons(), train_data.num_rels())
-    # hrt, s, nhrt, hrnt = train_data[0]
-    # print(hrt, s)
-    # print(nhrt)
-    # print(hrnt)
-
     train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True)
     hrt, s, nhrt, hrnt = next(iter(train_dataloader))
     print(hrt.shape, s.shape)
     print(nhrt.shape)
     print(hrnt.shape)
+
+    val_dataloader = DataLoader(val_dataset, batch_size=4, shuffle=True)
+    hrt, s = next(iter(val_dataloader))
+    print(hrt.shape, s.shape)
+
+    test_dataloader = DataLoader(test_dataset, batch_size=4, shuffle=True)
+    hrt, s = next(iter(test_dataloader))
+    print(hrt.shape, s.shape)

@@ -110,8 +110,6 @@ class DistMult(KGEModel):
         rel = self.rel_emb(rel_type)
         tail = self.node_emb(tail_index)
         g = (head * rel * tail).sum(dim=-1)
-        print('g', g)
-        print('f', torch.sigmoid(g))
         return torch.sigmoid(self.weights*g+self.bias) if self.model_type == "logi" else torch.clamp((self.weights*g+self.bias), min=0, max=1)
     
     
@@ -120,12 +118,17 @@ class DistMult(KGEModel):
 if __name__ == "__main__":
     from ukge.datasets import KGTripleDataset
     from torch.utils.data import DataLoader
+    
     train_data = KGTripleDataset(dataset='cn15k', split='train', num_neg_per_positive=10)
     train_dataloader = DataLoader(train_data, batch_size=8, shuffle=True)
     pos_hrt, score, neg_hn_rt, neg_hr_tn = next(iter(train_dataloader))
+    
     model = DistMult(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    
     print(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
-    pred_pos_score = model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
+    
+    pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
     print(pred_pos_score.shape)
+    
     pred_neg_hn_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
     print(pred_neg_hn_score.shape)
