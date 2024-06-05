@@ -12,6 +12,9 @@ from torch.utils.data import DataLoader
 from ukge.datasets import KGTripleDataset
 from ukge.models import DistMult
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
 model_map = {
     'distmult': DistMult,
 }
@@ -44,16 +47,17 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = next(iter(train_dataloader))
+    
+    pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.long(), pos_score.float(), neg_hn_rt.long(), neg_hr_tn.long()
     pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_score.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device)
-    # pred_pos_score = model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
-    print(pos_hrt)
     pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
-    print('pred s', pred_pos_score)
-    print('gt s', pos_score)
-    loss = criterion(pred_pos_score, pos_score)
-    model.zero_grad()
-    loss.backward()
-    optimizer.step()
+    pred_hneg_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
+    # pred_tneg_score = model(neg_hr_tn[:,0], neg_hr_tn[:,1], neg_hr_tn[:,2])
+
+    print('pred_pos_score', pred_pos_score)
+    print('pred_hneg_score', pred_hneg_score)
+    # print('pred_tneg_score', pred_tneg_score)
+
     
 
 if __name__ == '__main__':

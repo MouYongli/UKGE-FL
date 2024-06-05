@@ -152,7 +152,7 @@ class KGTripleDataset(Dataset):
         h = self.data['head_index'][idx]
         r = self.data['rel_index'][idx]
         t = self.data['tail_index'][idx]
-        s = self.data['score'][idx].astype(np.float32)
+        s = self.data['score'][idx]
         if self.split == 'train':
             nhrt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='h')
             hrnt = self.corrupt([h, r, t], self.num_neg_per_positive, tar='t')
@@ -235,7 +235,7 @@ class KGPSLTripleDataset(Dataset):
         h = self.data['head_index'][idx]
         r = self.data['rel_index'][idx]
         t = self.data['tail_index'][idx]
-        s = self.data['score'][idx].astype(np.float32)
+        s = self.data['score'][idx]
         return np.array([h, r, t]), np.array(s)
 
     
