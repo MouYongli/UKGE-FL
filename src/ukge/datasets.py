@@ -243,14 +243,14 @@ class KGPSLTripleDataset(Dataset):
         
 
 if __name__ == "__main__":
-    train_data = KGTripleDataset(split='train')
-    val_data = KGTripleDataset(split='val')
-    test_data = KGTripleDataset(split='test')
-    psl_data = KGPSLTripleDataset()
-    print(len(train_data))
-    print(len(val_data))
-    print(len(test_data))
-    print("这是 psl dataset", len(psl_data))
+    train_dataset = KGTripleDataset(split='train')
+    val_dataset = KGTripleDataset(split='val')
+    test_dataset = KGTripleDataset(split='test')
+    psl_dataset = KGPSLTripleDataset()
+    print(len(train_dataset))
+    print(len(val_dataset))
+    print(len(test_dataset))
+    print(len(psl_dataset))
 
     # print(train_data.num_cons(), train_data.num_rels())
     # hrt, s, nhrt, hrnt = train_data[0]
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     # print(nhrt)
     # print(hrnt)
 
-    train_dataloader = DataLoader(train_data, batch_size=4, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True)
     hrt, s, nhrt, hrnt = next(iter(train_dataloader))
     print(hrt.shape, s.shape)
     print(nhrt.shape)

@@ -18,8 +18,6 @@ model_map = {
     'distmult': DistMult,
 }
 
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
@@ -35,8 +33,8 @@ def main():
     args = parser.parse_args()
     
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
-    val_dataset = KGTripleDataset(dataset=args.dataset, split='val', num_neg_per_positive=args.num_neg_per_positive)
-    test_dataset = KGTripleDataset(dataset=args.dataset, split='test', num_neg_per_positive=args.num_neg_per_positive)
+    val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
+    test_dataset = KGTripleDataset(dataset=args.dataset, split='test')
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)

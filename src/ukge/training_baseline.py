@@ -2,22 +2,99 @@ import os
 import os.path as osp
 import numpy as np
 import pandas as pd
+import argparse
+
+from ukge.datasets import KGTripleDataset
+from ukge.models import DistMult
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import argparse
-
-from ukge.datasets import KGTripleDataset, KGValTripleDataset, KGPSLTripleDataset
-from ukge.models import DistMult
-from ukge.losses import compute_psl_loss
-
 from torch.utils.tensorboard import SummaryWriter
-
 
 model_map = {
     'distmult': DistMult,
 }
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
+    parser.add_argument('--model_type', type=str.lower, default='logi', choices=['logi', 'rect'])
+    parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
+    parser.add_argument('--num_neg_per_positive', default=10, type=int)
+    parser.add_argument('--hidden_dim', default=128, type=int)
+    parser.add_argument('--num_epochs', default=100, type=int)
+    parser.add_argument('--batch_size', default=1024, type=int)
+    parser.add_argument('--lr', default=0.01, type=float)
+    args = parser.parse_args()
+
+
+    
+    train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
+    val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
+    test_dataset = KGTripleDataset(dataset=args.dataset, split='test')
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
+    
+    criterion = nn.MSELoss()
+    
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
+    for epoch in range(args.num_epochs):
+        model.train()  
+        total_loss = 0
+
+        for idx, batch in enumerate(train_dataloader): 
+    
+            pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = batch
+            pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_score.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device)
+            pred_pos_score = model(pos_hrt[:,0].long(), pos_hrt[:,1].long(), pos_hrt[:,2].long())
+            # 负样本hn和tn的fl
+            pred_neg_hn_score = model(neg_hn_rt[:,:,0].long(), neg_hn_rt[:,:,1].long(), neg_hn_rt[:,:,2].long())
+            pred_neg_tn_score = model(neg_hr_tn[:, :, 0].long(), neg_hr_tn[:, :, 1].long(), neg_hr_tn[:, :, 2].long())
+            
+            # PSL的target
+            psl_target = psl_score
+            # Dataset的target
+            pos_target = pos_score
+            neg_target = torch.zeros_like(pred_neg_hn_score)
+
+
+            # PSLloss
+            psl_loss = compute_psl_loss(psl_prob, psl_target)
+            
+            # loss
+            pos_loss = criterion(pred_pos_score, pos_target)
+            neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2
+            loss = pos_loss + neg_loss + psl_loss
+            
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+
+        print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {total_loss / len(train_dataloader):.4f}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
 
 class Trainer(object):
     def __init__(self, args):
