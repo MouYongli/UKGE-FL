@@ -33,12 +33,15 @@ def main():
     parser.add_argument('--lr', default=0.01, type=float)
     args = parser.parse_args()
 
+    # Get the directory of the current script
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+
     # Create a CSV file to save losses and metrics
-    train_log_file = '/home/mou/Projects/KGE/UKGE-FL/src/ukge/train_metrics.csv'
+    train_log_file = os.path.join(script_dir, 'train_metrics.csv')
     with open(train_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Step', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
 
-    val_log_file = '/home/mou/Projects/KGE/UKGE-FL/src/ukge/val_metrics.csv'
+    val_log_file = os.path.join(script_dir, 'val_metrics.csv')
     with open(val_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
     
@@ -81,7 +84,7 @@ def main():
             if idx % 10 == 0:
                 print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Loss pos: {loss_pos.item():.4f}, Loss neg: {loss_neg.item():.4f}")
         with open(train_log_file, 'a') as file:
-            file.write(f"{epoch + 1},,{loss_total/len(train_dataloader):.4f},{loss_pos_total/len(train_dataloader):.4f},{loss_neg_total/len(train_dataloader):.4f}\n")
+            file.write(f"{epoch + 1},{loss_total/len(train_dataloader):.4f},{loss_pos_total/len(train_dataloader):.4f},{loss_neg_total/len(train_dataloader):.4f}\n")
         print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {loss_total/len(train_dataloader):.4f}, Loss pos: {loss_pos_total/len(train_dataloader):.4f}, Loss neg: {loss_neg_total/len(train_dataloader):.4f}")
         
         # Validation

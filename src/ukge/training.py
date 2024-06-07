@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
-    parser.add_argument('--batch_size', default=1024, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
     
     parser.add_argument('--lr', default=0.01, type=float)
     args = parser.parse_args()
