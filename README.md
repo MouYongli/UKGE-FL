@@ -1,6 +1,9 @@
 
 # Enhancing Uncertain Knowledge Graphs Embedding using Fuzzy Logic
 
+This is official repo for "Enhancing Uncertain Knowledge Graphs Embedding using Fuzzy Logic"  by DBIS and KBSG at RWTH Aachen University 
+[Yongli Mou*](mou@dbis.rwth-aachen.de), [Qihui Feng*](feng@kbsg.rwth-aachen.de), [Xiaoyan Jin](xiaoyan.jin@rwth-aachen.de), Gerhard Lakemeyer, Stefan Decker
+
 ## Dataset Setup
 
 We use three uncertain knowledge graph:
