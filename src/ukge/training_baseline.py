@@ -52,12 +52,48 @@ def main():
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
 
+def get_t_ranks(model, h, r, ts, device):
+    """
+    Given some t index, return the ranks for each t
+    :param model: the knowledge graph embedding model
+    :param h: head entity index
+    :param r: relation index
+    :param ts: list of tail entity indices
+    :param device: torch device (e.g., 'cpu' or 'cuda')
+    :return: ranks for each tail entity
+    """
+    model.eval()  # Ensure the model is in evaluation mode
+    with torch.no_grad():
+        # Create a tensor for head and relation with the same shape as ts
+        head_tensor = torch.tensor([h] * len(ts), dtype=torch.long, device=device)
+        rel_tensor = torch.tensor([r] * len(ts), dtype=torch.long, device=device)
+        tail_tensor = torch.tensor(ts, dtype=torch.long, device=device)
+
+        # Predict scores for each (h, r, t) triplet
+        scores = model(head_tensor, rel_tensor, tail_tensor)
+        ranks = torch.ones(len(ts), dtype=torch.int, device=device)  # Initialize rank as all 1
+
+        # Calculate scores for all possible tail entities
+        all_tails = torch.arange(model.num_nodes, dtype=torch.long, device=device)
+        all_scores = model(head_tensor, rel_tensor, all_tails)
+        sorted_indices = torch.argsort(all_scores, descending=True)  # Sort scores in descending order
+
+        # Determine the rank for each given tail entity
+        for i, t in enumerate(ts):
+            ranks[i] = (sorted_indices == t).nonzero(as_tuple=True)[0].item() + 1  # Find the rank of the tail entity
+
+    return ranks
+
+    
+
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
     
     criterion_mse = nn.MSELoss()
     criterion_mae = nn.L1Loss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
 
     for epoch in range(args.num_epochs):
         model.train()
@@ -79,6 +115,7 @@ def main():
             loss_total += loss.item()
             loss_pos_total += loss_pos.item()
             loss_neg_total += loss_neg.item()
+            
             with open(train_log_file, 'a') as file:
                 file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{loss_pos.item():.4f},{loss_neg.item():.4f}\n")
             if idx % 10 == 0:
@@ -100,6 +137,26 @@ def main():
                 val_loss_mse_total+= val_loss_mse.item()
                 val_loss_mae = criterion_mae(val_pred_score, val_score)
                 val_loss_mae_total+= val_loss_mae.item()
+                for i in range(len(val_hrt)):
+                h, r, t = val_hrt[i, 0].item(), val_hrt[i, 1].item(), val_hrt[i, 2].item()
+                tw_truth = [{'index': t, 'score': val_score[i].item()}]  # 此处应为实际的 ground truth 数据
+                ranks = get_t_ranks(model, h, r, [tw['index'] for tw in tw_truth], device)
+                gains = torch.tensor([tw['score'] for tw in tw_truth], device=device)
+                discounts = torch.log2(ranks + 1)
+                discounted_gains = gains / discounts
+                dcg = torch.sum(discounted_gains)  # discounted cumulative gain
+                max_possible_dcg = torch.sum(gains / torch.log2(torch.arange(len(gains), device=device) + 2))  # when ranks = [1, 2, ...len(truth)]
+                ndcg = dcg / max_possible_dcg  # normalized discounted cumulative gain
+                exp_gains = torch.tensor([2 ** tw['score'] - 1 for tw in tw_truth], device=device)
+                exp_discounted_gains = exp_gains / discounts
+                exp_dcg = torch.sum(exp_discounted_gains)
+                exp_max_possible_dcg = torch.sum(exp_gains / torch.log2(torch.arange(len(exp_gains), device=device) + 2))  # when ranks = [1, 2, ...len(truth)]
+                exp_ndcg = exp_dcg / exp_max_possible_dcg  # normalized discounted cumulative gain
+                ndcg_total += ndcg.item()
+                exp_ndcg_total += exp_ndcg.item()
+
+            avg_ndcg = ndcg_total / len(dataloader)
+            avg_exp_ndcg = exp_ndcg_total / len(dataloader)
             with open(val_log_file, 'a') as file:
                 file.write(f"{epoch + 1},{val_loss_mse/len(val_dataloader):.4f},{val_loss_mae/len(val_dataloader):.4f}\n")
             print(f"Validation Loss MSE: {val_loss_mse/len(val_dataloader):.4f}, Loss MAE: {val_loss_mae/len(val_dataloader):.4f}")
