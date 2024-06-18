@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 # from torch.utils.tensorboard import SummaryWriter
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 model_map = {
     'distmult': DistMult,
@@ -111,7 +111,6 @@ def main():
             loss_total += loss.item()
             loss_pos_total += loss_pos.item()
             loss_neg_total += loss_neg.item()
-            
             with open(train_log_file, 'a') as file:
                 file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{loss_pos.item():.4f},{loss_neg.item():.4f}\n")
             if idx % 10 == 0:

@@ -21,8 +21,6 @@ class KGTripleDataset(Dataset):
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
         all_data_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None)
-   
-
         data_triples_df = pd.read_csv(os.path.join(self.root, dataset, '{}.tsv'.format(split)), sep='\t', header=None)
         self.data = {
             'head_index': data_triples_df[0].to_numpy(),
@@ -63,8 +61,15 @@ class KGTripleDataset(Dataset):
             tph_array[r][h] += 1.
             hpt_array[r][t] += 1.
             self.triples_record.add((h, r, t))
+            if self.hr_map.get(h) == None:
+                self.hr_map[h] = {}
+            if self.hr_map[h].get(r) == None:
+                self.hr_map[h][r] = {t: w}
+            else:
+                self.hr_map[h][r][t] = w
         self.tph = np.mean(tph_array, axis=1)
         self.hpt = np.mean(hpt_array, axis=1)
+        
 
     def num_cons(self):
         '''Returns number of ontologies.
