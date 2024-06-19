@@ -56,20 +56,36 @@ class KGTripleDataset(Dataset):
         self.tph = np.array([0])
         tph_array = np.zeros((len(self.rels), len(self.cons)))
         hpt_array = np.zeros((len(self.rels), len(self.cons)))
-        for h_, r_, t_, w in all_data_triples_df.to_numpy():  # only training data
+
+        self.hrtw_map = {}
+        self.hr_all_tw_map = {}
+        for h_, r_, t_, w in data_triples_df.to_numpy():
+            h, r, t = int(h_), int(r_), int(t_)
+            if self.hrtw_map.get(h) == None:
+                self.hrtw_map[h] = {}
+                self.hr_all_tw_map[h] = {}
+            if self.hrtw_map[h].get(r) == None:
+                self.hrtw_map[h][r] = {t: w}
+                self.hr_all_tw_map[h][r] = {t: w}
+            else:
+                self.hrtw_map[h][r][t] = w
+                self.hr_all_tw_map[h][r][t] = w
+
+        for h_, r_, t_, w in all_data_triples_df.to_numpy():
             h, r, t = int(h_), int(r_), int(t_)
             tph_array[r][h] += 1.
             hpt_array[r][t] += 1.
             self.triples_record.add((h, r, t))
-            if self.hr_map.get(h) == None:
-                self.hr_map[h] = {}
-            if self.hr_map[h].get(r) == None:
-                self.hr_map[h][r] = {t: w}
-            else:
-                self.hr_map[h][r][t] = w
+            if h in self.hr_all_tw_map and r in self.hr_all_tw_map[h]:
+                self.hr_all_tw_map[h][r][t] = w
         self.tph = np.mean(tph_array, axis=1)
         self.hpt = np.mean(hpt_array, axis=1)
-        
+    
+    def get_hrtw_map(self):
+        return self.hrtw_map
+    
+    def get_hr_all_tw_map(self):
+        return self.hr_all_tw_map
 
     def num_cons(self):
         '''Returns number of ontologies.
