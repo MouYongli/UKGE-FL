@@ -119,7 +119,6 @@ class Evaluator(object):
 
         scores_array = np.array(self.hr_scores_map[h][r])
         scores_rank_array = scores_array.argsort()[::-1].argsort() + 1
-        print(scores_rank_array)
         ranks = np.array([scores_rank_array[i] for i in ts])
         # ranks = self.get_rank(h, r, ts)
         
