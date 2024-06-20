@@ -116,7 +116,12 @@ class Evaluator(object):
         Calculate the nDCG of the given list of (t, w) tuples.
         """
         ts = [tw.index for tw in tw_truth]
-        ranks = self.get_rank(h, r, ts)
+
+        scores_array = np.array(self.hr_scores_map[h][r])
+        scores_rank_array = scores_array.argsort()[::-1].argsort() + 1
+        print(scores_rank_array)
+        ranks = np.array([scores_rank_array[i] for i in ts])
+        # ranks = self.get_rank(h, r, ts)
         
         # linear gain
         gains = np.array([tw.score for tw in tw_truth])
