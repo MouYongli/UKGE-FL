@@ -96,20 +96,6 @@ class Evaluator(object):
                     count += 1
                 mae += abs(w - w_hat)
         return mae / count
-    
-    def get_rank(self, h: int, r: int, ts: List[int]):
-        """
-        Given some t index, return the ranks for each t
-        :return:
-        """
-        # prediction
-        scores = np.array([self.hr_scores_map[h][r][t] for t in ts])  # predict scores for t from ground truth
-        ranks = np.ones(len(ts), dtype=int)  # initialize rank as all 1
-        for i in range(self.num_cons):  # compute scores for all concept vectors as t
-            score_i = self.hr_scores_map[h][r][i]
-            rankplus = (scores < score_i).astype(int)  # rank+1 if score<score_i
-            ranks += rankplus
-        return ranks
 
     def ndcg(self, h: int, r: int, tw_truth: List[IndexScore]) -> Tuple[float, float]:
         """
@@ -120,7 +106,6 @@ class Evaluator(object):
         scores_array = np.array(self.hr_scores_map[h][r])
         scores_rank_array = scores_array.argsort()[::-1].argsort() + 1
         ranks = np.array([scores_rank_array[i] for i in ts])
-        # ranks = self.get_rank(h, r, ts)
         
         # linear gain
         gains = np.array([tw.score for tw in tw_truth])
