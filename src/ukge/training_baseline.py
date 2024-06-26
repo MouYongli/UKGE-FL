@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
-    parser.add_argument('--num_epochs', default=1, type=int)
+    parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument('--lr', default=0.01, type=float)
     args = parser.parse_args()
@@ -58,66 +58,56 @@ def main():
     
     evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
     criterion_mse = nn.MSELoss()
-    criterion_mae = nn.L1Loss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     for epoch in range(args.num_epochs):
-        # model.train()
-        # loss_total = 0.0
-        # loss_pos_total = 0.0
-        # loss_neg_total = 0.0
-        # for idx, (pos_hrt, pos_score, neg_hn_rt, neg_hr_tn) in enumerate(train_dataloader):
-        #     pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.long(), pos_score.float(), neg_hn_rt.long(), neg_hr_tn.long()
-        #     pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_score.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device) 
-        #     pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
-        #     pred_hneg_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
-        #     pred_tneg_score = model(neg_hr_tn[:,:,0], neg_hr_tn[:,:,1], neg_hr_tn[:,:,2])
-        #     loss_pos = criterion_mse(pred_pos_score, pos_score)
-        #     loss_neg = (torch.pow(pred_hneg_score, 2).mean() + torch.pow(pred_tneg_score, 2).mean())/2
-        #     loss = loss_pos + loss_neg
-        #     model.zero_grad()
-        #     loss.backward()
-        #     optimizer.step()
-        #     loss_total += loss.item()
-        #     loss_pos_total += loss_pos.item()
-        #     loss_neg_total += loss_neg.item()
-        #     with open(train_log_file, 'a') as file:
-        #         file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{loss_pos.item():.4f},{loss_neg.item():.4f}\n")
-        #     if idx % 10 == 0:
-        #         print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Loss pos: {loss_pos.item():.4f}, Loss neg: {loss_neg.item():.4f}")
-        # with open(train_log_file, 'a') as file:
-        #     file.write(f"{epoch + 1},{loss_total/len(train_dataloader):.4f},{loss_pos_total/len(train_dataloader):.4f},{loss_neg_total/len(train_dataloader):.4f}\n")
-        # print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {loss_total/len(train_dataloader):.4f}, Loss pos: {loss_pos_total/len(train_dataloader):.4f}, Loss neg: {loss_neg_total/len(train_dataloader):.4f}")
+        model.train()
+        loss_total = 0.0
+        loss_pos_total = 0.0
+        loss_neg_total = 0.0
+        for idx, (pos_hrt, pos_score, neg_hn_rt, neg_hr_tn) in enumerate(train_dataloader):
+            pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.long(), pos_score.float(), neg_hn_rt.long(), neg_hr_tn.long()
+            pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_score.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device) 
+            pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
+            pred_hneg_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
+            pred_tneg_score = model(neg_hr_tn[:,:,0], neg_hr_tn[:,:,1], neg_hr_tn[:,:,2])
+            loss_pos = criterion_mse(pred_pos_score, pos_score)
+            loss_neg = (torch.pow(pred_hneg_score, 2).mean() + torch.pow(pred_tneg_score, 2).mean())/2
+            loss = loss_pos + loss_neg
+            model.zero_grad()
+            loss.backward()
+            optimizer.step()
+            loss_total += loss.item()
+            loss_pos_total += loss_pos.item()
+            loss_neg_total += loss_neg.item()
+            with open(train_log_file, 'a') as file:
+                file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{loss_pos.item():.4f},{loss_neg.item():.4f}\n")
+            if idx % 10 == 0:
+                print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Loss pos: {loss_pos.item():.4f}, Loss neg: {loss_neg.item():.4f}")
+        with open(train_log_file, 'a') as file:
+            file.write(f"{epoch + 1},{loss_total/len(train_dataloader):.4f},{loss_pos_total/len(train_dataloader):.4f},{loss_neg_total/len(train_dataloader):.4f}\n")
+        print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {loss_total/len(train_dataloader):.4f}, Loss pos: {loss_pos_total/len(train_dataloader):.4f}, Loss neg: {loss_neg_total/len(train_dataloader):.4f}")
         
-        model.eval()
-        evaluator.update_hr_scores_map()
-        print(evaluator.get_mse())
-        print(evaluator.get_mae())
-        print(evaluator.get_mean_ndcg())
-        
-        
-        # Validation
         # model.eval()
-        # results = []
-        # with torch.no_grad():
-        #     for val_idx, (val_hrt, val_score) in enumerate(val_dataloader):
-        #         val_hrt, val_score = val_hrt.long(), val_score.float()
-        #         val_hrt, val_score = val_hrt.to(device), val_score.to(device)
-        #         val_pred_score = model(val_hrt[:,0], val_hrt[:,1], val_hrt[:,2])
-        #         val_hrt = val_hrt.cpu().numpy()
-        #         val_score = val_score.cpu().numpy()
-        #         val_pred_score = val_pred_score.cpu().numpy()
-        #         for hrt, w, w_pred in zip(val_hrt, val_score, val_pred_score):
-        #             results.append((hrt[0], hrt[1], hrt[2], w, w_pred))
-        #     results = sorted(results, key=lambda x: x[4], reverse=True)
-            
-        #     val_loss_mse = evaluator.calculate_mse(results)
-        #     val_loss_mae = evaluator.calculate_mae(results)
-        #     print(val_loss_mse, val_loss_mae)
+        # evaluator.update_hr_scores_map()
+        # print(evaluator.get_mse())
+        # print(evaluator.get_mae())
+        # print(evaluator.get_mean_ndcg())
 
-            # with open(val_log_file, 'a') as file:
-            #     file.write(f"{epoch + 1},{val_loss_mse/len(val_dataloader):.4f},{val_loss_mae/len(val_dataloader):.4f}\n")
-            # print(f"Validation Loss MSE: {val_loss_mse/len(val_dataloader):.4f}, Loss MAE: {val_loss_mae/len(val_dataloader):.4f}")
+        if (epoch + 1) % 10 == 0:
+            model.eval()
+            evaluator.update_hr_scores_map()
+            mse = evaluator.get_mse()
+            mae = evaluator.get_mae()
+            mean_ndcg = evaluator.get_mean_ndcg()
+            print(f"Evaluation at Epoch [{epoch + 1}/{args.num_epochs}]")
+            print(f"MSE: {mse:.4f}")
+            print(f"MAE: {mae:.4f}")
+            print(f"Mean nDCG: {mean_ndcg[0]:.4f}, Exponential Mean nDCG: {mean_ndcg[1]:.4f}")
+            
+            # 记录评估结果到 val_log_file
+            with open(val_log_file, 'a') as file:
+                file.write(f"{epoch + 1},{mse:.4f},{mae:.4f},{mean_ndcg[0]:.4f},{mean_ndcg[1]:.4f}\n")
         
 if __name__ == "__main__":
     main()
