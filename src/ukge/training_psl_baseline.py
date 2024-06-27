@@ -25,26 +25,29 @@ model_map = {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
-    parser.add_argument('--model_type', type=str.lower, default='logi', choices=['logi', 'rect'])
-    parser.add_argument('--loss_type', type=str.lower, default='logi', choices=['', 'rect'])
+    parser.add_argument('--model_type', type=str.lower, default='rect', choices=['logi', 'rect'])
     parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=1024, type=int)
-    parser.add_argument('--l2_lambda', default=0.005, type=float)
     parser.add_argument('--lr', default=0.01, type=float)
+    parser.add_argument('--weight_decay', default=0.0005, type=float)
     args = parser.parse_args()
 
     # Get the directory of the current script
     script_dir = os.path.dirname(os.path.realpath(__file__))
 
     # Create a CSV file to save losses and metrics
-    train_log_file = os.path.join(script_dir, 'train_metrics.csv')
+    train_log_file = os.path.join(script_dir, f'{args.dataset}_train_psl_metrics.csv')
+    if os.path.exists(train_log_file):
+        os.remove(train_log_file)
     with open(train_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Step', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
-
-    val_log_file = os.path.join(script_dir, 'val_metrics.csv')
+    
+    val_log_file = os.path.join(script_dir, f'{args.dataset}_val_psl_metrics.csv')
+    if os.path.exists(val_log_file):
+        os.remove(val_log_file)
     with open(val_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
 
@@ -53,7 +56,9 @@ def main():
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
     test_dataset = KGTripleDataset(dataset=args.dataset, split='test')
     psl_dataset = KGPSLTripleDataset(dataset=args.dataset)
+    # 先定义psl_batch_size
     psl_batch_size = int(len(psl_dataset) / len(train_dataset) * args.batch_size)
+    print('psl batch size:', psl_batch_size)
     
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
@@ -61,25 +66,22 @@ def main():
     psl_dataloader = DataLoader(psl_dataset, batch_size=psl_batch_size, shuffle=True)
 
 
-    # 先定义psl_batch_size
-    psl_batch_size = int(len(psl_dataset) / len(train_dataset) * args.batch_size)
 
 
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
-    model_psl = model_map[args.model](num_nodes=psl_dataset.num_cons(), num_relations=psl_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
-    
+
     evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     for epoch in range(args.num_epochs):
         model.train()
-        total_loss = 0
-        pos_loss_total = 0
-        neg_loss_total = 0
-        psl_loss_total = 0
+        total_loss = 0.0
+        pos_loss_total = 0.0
+        neg_loss_total = 0.0
+        psl_loss_total = 0.0
 
         for idx, (batch_psl, batch) in enumerate(zip(psl_dataloader, train_dataloader)):
             psl_hrt, psl_score = batch_psl
@@ -91,7 +93,7 @@ def main():
             neg_hn_rt, neg_hr_tn = neg_hn_rt.to(device).long(), neg_hr_tn.to(device).long()
 
             # Forward pass
-            psl_prob = model_psl(psl_hrt[:, 0], psl_hrt[:, 1], psl_hrt[:, 2])
+            psl_prob = model(psl_hrt[:, 0], psl_hrt[:, 1], psl_hrt[:, 2])
             pred_pos_score = model(pos_hrt[:,0], pos_hrt[:,1], pos_hrt[:,2])
             pred_neg_hn_score = model(neg_hn_rt[:,:,0], neg_hn_rt[:,:,1], neg_hn_rt[:,:,2])
             pred_neg_tn_score = model(neg_hr_tn[:, :, 0], neg_hr_tn[:, :, 1], neg_hr_tn[:, :, 2])
@@ -100,34 +102,30 @@ def main():
             psl_target = psl_score
             pos_target = pos_score
             neg_target = torch.zeros_like(pred_neg_hn_score)
-
-            # Compute losses
+            
+            # # Compute losses
             psl_loss = compute_psl_loss(psl_prob, psl_target)
             pos_loss = criterion(pred_pos_score, pos_target)
             neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2
 
+            # print(f"Epoch [{epoch + 1}], Step [{idx + 1}]")
+            # print(f"PSL Prob: {psl_prob}")
+            # print(f"PSL Score: {psl_score}")
+            # print(f"PSL Loss: {psl_loss.item()}")
 
-            print(f"Epoch [{epoch + 1}], Step [{idx + 1}]")
-            print(f"PSL Prob: {psl_prob}")
-            print(f"PSL Score: {psl_score}")
-            print(f"PSL Loss: {psl_loss.item()}")
-
-
-            l2_reg = torch.tensor(0., device=device, dtype=torch.float32)  # 将l2_reg初始化到设备上，并指定为 float32
-            for param in model.parameters():
-                l2_reg = l2_reg + torch.norm(param, p=2)**2  # 累加L2损失(平方？
+            pos_loss_total += pos_loss.item()
+            neg_loss_total += neg_loss.item()
+            psl_loss_total += psl_loss.item()
 
             # 总损失
-            loss = pos_loss + neg_loss + psl_loss + args.l2_lambda * l2_reg
+            loss = pos_loss + neg_loss + psl_loss
 
             # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
             total_loss += loss.item()
-            pos_loss_total += pos_loss.item()
-            neg_loss_total += neg_loss.item()
-            psl_loss_total += psl_loss.item()
 
             # Log to file
             with open(train_log_file, 'a') as file:
@@ -153,7 +151,7 @@ def main():
             print(f"MSE: {mse:.4f}")
             print(f"MAE: {mae:.4f}")
             print(f"Mean nDCG: {mean_ndcg[0]:.4f}, Exponential Mean nDCG: {mean_ndcg[1]:.4f}")
-            
+        
             # 记录评估结果到 val_log_file
             with open(val_log_file, 'a') as file:
                 file.write(f"{epoch + 1},{mse:.4f},{mae:.4f},{mean_ndcg[0]:.4f},{mean_ndcg[1]:.4f}\n")

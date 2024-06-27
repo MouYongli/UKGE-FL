@@ -37,7 +37,7 @@ class Evaluator(object):
         self.dataloader = dataloader
         self.model = model
         
-        self.hrtw_map = self.dataloader.dataset.get_hrtw_map()
+        self.hrtw_map = self.dataloader.dataset.get_hrtw_map() # hrtw_map: {h: {r: {t: w}}}，只对于选择的dataset
         self.hr_all_tw_map = self.dataloader.dataset.get_hr_all_tw_map()
         self.num_cons = self.dataloader.dataset.num_cons()
 
@@ -63,7 +63,8 @@ class Evaluator(object):
         print("Updating hr_scores_map...")
         for i, h in enumerate(tqdm(self.hrtw_map.keys())):
             for r in self.hrtw_map[h].keys():
-                self.hr_scores_map[h][r] = self.get_hr_scores(h, r)
+                self.hr_scores_map[h][r] = self.get_hr_scores(h, r) # list of scores for all tail entities（但没有显示对应的tail index
+
 
     def get_mse(self) -> float:
         """
@@ -101,11 +102,13 @@ class Evaluator(object):
         """
         Calculate the nDCG of the given list of (t, w) tuples.
         """
-        ts = [tw.index for tw in tw_truth]
+        ts = [tw.index for tw in tw_truth]  
 
-        scores_array = np.array(self.hr_scores_map[h][r])
-        scores_rank_array = scores_array.argsort()[::-1].argsort() + 1
-        ranks = np.array([scores_rank_array[i] for i in ts])
+        scores_array = np.array(self.hr_scores_map[h][r]) #hr_scores_map是list of scores for all tail entities（但没有显示对应的tail index
+        scores_rank_array = scores_array.argsort()[::-1].argsort() + 1 #计算scores_array的排名（返回的是每个array对应的排名
+        ranks = np.array([scores_rank_array[i] for i in ts]) #是不是默认scores array是按照index排序的（？
+        #这里的
+    
         
         # linear gain
         gains = np.array([tw.score for tw in tw_truth])

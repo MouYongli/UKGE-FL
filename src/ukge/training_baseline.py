@@ -32,17 +32,18 @@ def main():
     parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument('--lr', default=0.01, type=float)
+    parser.add_argument('--weight_decay', default=0.0005, type=float)
     args = parser.parse_args()
 
     # Get the directory of the current script
     script_dir = os.path.dirname(os.path.realpath(__file__))
 
     # Create a CSV file to save losses and metrics
-    train_log_file = os.path.join(script_dir, 'train_metrics.csv')
+    train_log_file = os.path.join(script_dir, f'{args.dataset}_train_baseline_metrics.csv')
     with open(train_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Step', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
 
-    val_log_file = os.path.join(script_dir, 'val_metrics.csv')
+    val_log_file = os.path.join(script_dir, f'{args.dataset}_val_baseline_metrics.csv')
     with open(val_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
     
@@ -58,7 +59,7 @@ def main():
     
     evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
     criterion_mse = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     for epoch in range(args.num_epochs):
         model.train()
