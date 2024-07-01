@@ -6,12 +6,13 @@ This is official repo for "Enhancing Uncertain Knowledge Graphs Embedding using 
 
 ## Dataset Setup
 
-We use three uncertain knowledge graph:
+We use the following 3 uncertain knowledge graph datasets:
 - CN15k
 - NL27k
 - PPI5k
 
-downdgoqng
+Datasets are from other GitHub repos from [ShihanYang/UKGsE](https://github.com/ShihanYang/UKGsE.git) (train/test) and [stasl0217/UKGE](https://github.com/stasl0217/UKGE/tree/master) (train/val/test).
+We need to preprocess NL27K dataset, Code available [here](./scripts/preprocess_nl27k.py)
 
 ## Python Environment Setup
 

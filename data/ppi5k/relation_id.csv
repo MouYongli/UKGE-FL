@@ -1,4 +1,4 @@
-id,rel string
+id,relation string
 0,binding
 1,expression
 2,activation

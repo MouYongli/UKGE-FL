@@ -1,4 +1,4 @@
-
+import torch
 from torch import Tensor
 from ukge.models import KGEModel
 from torch import Tensor
@@ -30,3 +30,12 @@ def loss(
     total_loss = pos_h_loss + pos_t_loss + neg_h_loss + psl_h_loss + psl_t_loss + neg_t_loss
 
     return total_loss
+
+    
+def compute_psl_loss(psl_prob, psl_score, prior_psl = 0.5, alpha_psl = 0.2):
+    # prior_psl0 = torch.tensor(prior_psl)
+    # psl_error_each = torch.square(torch.max(psl_score + prior_psl0 - psl_prob, torch.tensor(0)))
+    # psl_mse = torch.mean(psl_error_each)
+    # psl_loss = alpha_psl * psl_mse
+    psl_loss = alpha_psl * torch.mean(torch.square(torch.max(psl_score + prior_psl - psl_prob, torch.tensor(0.0))))
+    return psl_loss
