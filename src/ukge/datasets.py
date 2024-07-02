@@ -12,16 +12,24 @@ here = osp.dirname(osp.abspath(__file__))
 data_path = osp.join(here, '../..', 'data')
 
 class KGTripleDataset(Dataset):
-    def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10):
+    def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10, deterministic=False, threshold=0.5):
         self.root=root
         self.dataset = dataset
         assert split in ['train', 'val', 'test'], "Invalid value for 'split'. It should be one of 'train', 'val', or 'test'."
         self.split = split
         self.num_neg_per_positive = num_neg_per_positive
+        self.deterministic = deterministic
+        self.threshold = threshold
+
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
         all_data_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None)
         data_triples_df = pd.read_csv(os.path.join(self.root, dataset, '{}.tsv'.format(split)), sep='\t', header=None)
+        
+        if self.deterministic and self.split == 'train':
+            data_triples_df = data_triples_df[data_triples_df[3] > self.threshold]
+            all_data_triples_df = all_data_triples_df[all_data_triples_df[3] > self.threshold]
+            
         self.data = {
             'head_index': data_triples_df[0].to_numpy(),
             'rel_index': data_triples_df[1].to_numpy(),
@@ -258,10 +266,6 @@ class KGPSLTripleDataset(Dataset):
         t = self.data['tail_index'][idx]
         s = self.data['score'][idx]
         return np.array([h, r, t]), np.array(s)
-
-    
-
-        
 
 if __name__ == "__main__":
     train_dataset = KGTripleDataset(split='train')
