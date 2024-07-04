@@ -246,6 +246,7 @@ class DistMult(KGEModel):
         sparse (bool, optional): If set to :obj:`True`, gradients w.r.t. to
             the embedding matrices will be sparse. (default: :obj:`False`)
     """
+
     def __init__(
         self,
         num_nodes: int,
@@ -254,11 +255,12 @@ class DistMult(KGEModel):
         sparse: bool = False,
         model_type: str = "logi"
     ):
+        
+        assert model_type in ['logi', 'rect'], "Invalid value for 'model_types'. It should be one of 'logi', or 'rect'."
+
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
-        self.reset_parameters()
-        self.weights = torch.nn.Parameter(torch.ones(1))
-        self.bias = torch.nn.Parameter(torch.zeros(1))
         self.model_type = model_type
+        self.reset_parameters()
 
     def reset_parameters(self):
         torch.nn.init.xavier_uniform_(self.node_emb.weight)
@@ -269,21 +271,52 @@ class DistMult(KGEModel):
         head_index: Tensor,
         rel_type: Tensor,
         tail_index: Tensor,
-   ) -> Tuple[Tensor, Tensor, Tensor]:
+    ) -> Tensor:
         head = self.node_emb(head_index)
         rel = self.rel_emb(rel_type)
         tail = self.node_emb(tail_index)
-        return head, rel, tail
-    
-    def score(self, 
-        head_index: Tensor, 
-        rel_type: Tensor, 
-        tail_index: Tensor
-    ) -> Tensor:
-        head, rel, tail = self.forward(head_index, rel_type, tail_index)
-        g = (head * rel).sum(dim=-1)
+        g = (head * rel * tail).sum(dim=-1)
         return torch.sigmoid(self.weights*g+self.bias) if self.model_type == "logi" else torch.clamp((self.weights*g+self.bias), min=0, max=1)
-        # return (head * rel * tail).sum(dim=-1)
+
+
+#     def __init__(
+#         self,
+#         num_nodes: int,
+#         num_relations: int,
+#         hidden_channels: int,
+#         sparse: bool = False,
+#         model_type: str = "logi"
+#     ):
+#         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
+#         self.reset_parameters()
+#         self.weights = torch.nn.Parameter(torch.ones(1))
+#         self.bias = torch.nn.Parameter(torch.zeros(1))
+#         self.model_type = model_type
+
+#     def reset_parameters(self):
+#         torch.nn.init.xavier_uniform_(self.node_emb.weight)
+#         torch.nn.init.xavier_uniform_(self.rel_emb.weight)
+
+#     def forward(
+#         self,
+#         head_index: Tensor,
+#         rel_type: Tensor,
+#         tail_index: Tensor,
+#    ) -> Tuple[Tensor, Tensor, Tensor]:
+#         head = self.node_emb(head_index)
+#         rel = self.rel_emb(rel_type)
+#         tail = self.node_emb(tail_index)
+#         return head, rel, tail
+    
+#     def score(self, 
+#         head_index: Tensor, 
+#         rel_type: Tensor, 
+#         tail_index: Tensor
+#     ) -> Tensor:
+#         head, rel, tail = self.forward(head_index, rel_type, tail_index)
+#         # g = (head * rel).sum(dim=-1)
+#         # return torch.sigmoid(self.weights*g+self.bias) if self.model_type == "logi" else torch.clamp((self.weights*g+self.bias), min=0, max=1)
+#         return (head * rel * tail).sum(dim=-1)
         
 
 if __name__ == "__main__":
