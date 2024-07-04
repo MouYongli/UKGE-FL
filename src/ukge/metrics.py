@@ -122,7 +122,6 @@ class Evaluator(object):
         Calculate the nDCG of the given list of (t, w) tuples.
         """
         ts = [tw.index for tw in tw_truth]  
-
         scores_array = np.array(self.hr_scores_map[h][r]) #hr_scores_map是list of scores for all tail entities（但没有显示对应的tail index
         scores_rank_array = scores_array.argsort()[::-1].argsort() + 1 #计算scores_array的排名（返回的是每个array对应的排名
         ranks = np.array([scores_rank_array[i] for i in ts]) #是不是默认scores array是按照index排序的（？
