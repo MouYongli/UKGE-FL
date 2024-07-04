@@ -281,9 +281,9 @@ class DistMult(KGEModel):
         tail_index: Tensor
     ) -> Tensor:
         head, rel, tail = self.forward(head_index, rel_type, tail_index)
-        # g = (head * rel).sum(dim=-1)
-        # return torch.sigmoid(self.weights*g+self.bias) if self.model_type == "logi" else torch.clamp((self.weights*g+self.bias), min=0, max=1)
-        return (head * rel * tail).sum(dim=-1)
+        g = (head * rel).sum(dim=-1)
+        return torch.sigmoid(self.weights*g+self.bias) if self.model_type == "logi" else torch.clamp((self.weights*g+self.bias), min=0, max=1)
+        # return (head * rel * tail).sum(dim=-1)
         
 
 if __name__ == "__main__":
