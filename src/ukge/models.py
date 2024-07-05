@@ -92,8 +92,8 @@ class TransE(KGEModel):
         num_nodes: int,
         num_relations: int,
         hidden_channels: int,
-        p_norm: float = 1.0,
         sparse: bool = False,
+        p_norm: float = 1.0,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
         self.p_norm = p_norm
@@ -116,7 +116,6 @@ class TransE(KGEModel):
         tail = self.node_emb(tail_index)
         head = F.normalize(head, p=self.p_norm, dim=-1)
         tail = F.normalize(tail, p=self.p_norm, dim=-1)
-        # Calculate *negative* TransE norm:
         return -((head + rel) - tail).norm(p=self.p_norm, dim=-1)
     
     def get_embeddings(
@@ -234,11 +233,8 @@ class ComplEx(KGEModel):
         sparse: bool = False,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
-
         self.node_emb_im = Embedding(num_nodes, hidden_channels, sparse=sparse)
-        self.rel_emb_im = Embedding(num_relations, hidden_channels,
-                                    sparse=sparse)
-
+        self.rel_emb_im = Embedding(num_relations, hidden_channels, sparse=sparse)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -253,7 +249,6 @@ class ComplEx(KGEModel):
         rel_type: Tensor,
         tail_index: Tensor,
     ) -> Tensor:
-
         head_re = self.node_emb(head_index)
         head_im = self.node_emb_im(head_index)
         rel_re = self.rel_emb(rel_type)
@@ -324,11 +319,9 @@ class RotatE(KGEModel):
         num_relations: int,
         hidden_channels: int,
         sparse: bool = False,
-        margin: float = 1.0,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
         self.node_emb_im = Embedding(num_nodes, hidden_channels, sparse=sparse) 
-        self.margin = margin
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -354,7 +347,7 @@ class RotatE(KGEModel):
         score = torch.linalg.vector_norm(complex_score, dim=(1, 2))
         return -score
     
-    def get_embeddigns(self, 
+    def get_embeddings(self, 
         head_index: Tensor, 
         rel_type: Tensor, 
         tail_index: Tensor
@@ -374,11 +367,34 @@ if __name__ == "__main__":
     
     train_data = KGTripleDataset(dataset='cn15k', split='train', num_neg_per_positive=10)
     train_dataloader = DataLoader(train_data, batch_size=8, shuffle=True)
-    pos_hrt, score, neg_hn_rt, neg_hr_tn = next(iter(train_dataloader))    
-    model = DistMult(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    
+    pos_hrt, score, neg_hn_rt, neg_hr_tn = next(iter(train_dataloader))
     print(pos_hrt.shape, score.shape, neg_hn_rt.shape, neg_hr_tn.shape)
+    
+    print("=============================TransE=============================T")
+    model = TransE(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
     head, rel, tail = model.get_embeddings(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
-    plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
-    loss = model.loss(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2], neg_hn_rt[:, :, 0], neg_hn_rt[:, :, 1], neg_hn_rt[:, :, 2])
     print(head.shape, rel.shape, tail.shape)
+    plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    print(plausibility_score)
+
+    print("=============================DistMult=============================T")
+    model = DistMult(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    head, rel, tail = model.get_embeddings(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    print(head.shape, rel.shape, tail.shape)
+    plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    print(plausibility_score)
+
+    print("=============================ComplEx=============================T")
+    model = ComplEx(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    head_re, head_im, rel_re, rel_im, tail_re, tail_im = model.get_embeddings(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    print(print(head_re.shape, head_im.shape, rel_re.shape, rel_im.shape, tail_re.shape, tail_im.shape))
+    plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    print(plausibility_score)
+
+    print("=============================RotatE=============================T")
+    model = RotatE(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    head_re, head_im, rel_re, rel_im, tail_re, tail_im = model.get_embeddings(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    print(print(head_re.shape, head_im.shape, rel_re.shape, rel_im.shape, tail_re.shape, tail_im.shape))
+    plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
     print(plausibility_score)
