@@ -136,5 +136,4 @@ if __name__ == '__main__':
     print("=============================RotatE=============================T")
     loss = compute_det_rotate_loss(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2], neg_hn_rt[:, 0], neg_hn_rt[:, 1], neg_hn_rt[:, 2], model)
     print(loss.item())
-
     

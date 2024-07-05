@@ -5,7 +5,8 @@ import pandas as pd
 import argparse
 
 from ukge.datasets import KGTripleDataset
-from ukge.models import DistMult
+from ukge.models import TransE, DistMult, ComplEx, RotatE
+from ukge.losses import compute_det_transe_loss, compute_det_distmult_loss, compute_det_complex_loss, compute_det_rotate_loss
 from ukge.metrics import Evaluator
 
 import torch
@@ -18,13 +19,27 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 model_map = {
+    'transe': TransE,
     'distmult': DistMult,
+    'complex': ComplEx,
+    'rotate': RotatE
 }
+
+loss_map = {
+    'transe': compute_det_transe_loss,
+    'distmult': compute_det_distmult_loss,
+    'complex': compute_det_complex_loss,
+    'rotate': compute_det_rotate_loss
+}
+
+here = osp.dirname(osp.abspath(__file__))
+work_dir = osp.join(here, '../../', 'results')
+if not osp.exists(work_dir):
+    os.makedirs(work_dir)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str.lower, default='distmult', choices=['distmult'])
-    parser.add_argument('--loss_type', type=str.lower, default='logi', choices=['', 'rect'])
+    parser.add_argument('--model', type=str.lower, default='distmult', choices=['transe','distmult','complex','rotate'])
     parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--hidden_dim', default=128, type=int)
@@ -34,17 +49,16 @@ def main():
     parser.add_argument('--weight_decay', default=0.0005, type=float)
     args = parser.parse_args()
 
-    # Get the directory of the current script
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+    exp_dir = osp.join(work_dir, f'det_{args.dataset}_{args.model}')
 
     # Create a CSV file to save losses and metrics
-    train_log_file = os.path.join(script_dir, f'{args.dataset}_train_baseline_metrics.csv')
+    train_log_file = os.path.join(exp_dir, 'train_metrics.csv')
     with open(train_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'Step', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
+        file.write(','.join(['Epoch', 'Step', 'Loss']) + '\n')
 
-    val_log_file = os.path.join(script_dir, f'{args.dataset}_val_baseline_metrics.csv')
+    val_log_file = os.path.join(exp_dir, 'val_metrics.csv')
     with open(val_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'Loss', 'Loss pos', 'Loss neg']) + '\n')
+        file.write(','.join(['Epoch', 'Loss', 'Acc', 'F1', 'lin_nDCG', 'exp_nDCG']) + '\n')
     
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
@@ -54,10 +68,10 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, model_type=args.model_type).to(device)
+    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim).to(device)
     
     evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
-    criterion_mse = nn.MSELoss()
+    
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     for epoch in range(args.num_epochs):
