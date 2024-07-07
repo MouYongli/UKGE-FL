@@ -101,7 +101,6 @@ def main():
             neg_hr_tn = neg_hr_tn.view(-1, neg_hr_tn.size(-1))
             optimizer.zero_grad()
             verbose = True if  idx == 100 else False
-            # 计算正样本得分
             pred_pos_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
             pred_neg_h_score = model(neg_hn_rt[:, 0], neg_hn_rt[:, 1], neg_hn_rt[:, 2])
             pred_neg_t_score = model(neg_hr_tn[:, 0], neg_hr_tn[:, 1], neg_hr_tn[:, 2])
