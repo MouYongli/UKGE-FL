@@ -21,7 +21,7 @@ class KGEModel(torch.nn.Module):
         num_nodes: int,
         num_relations: int,
         hidden_channels: int,
-        sparse: bool = False,
+        sparse: bool = False
     ):
         super().__init__()
 
@@ -31,6 +31,9 @@ class KGEModel(torch.nn.Module):
 
         self.node_emb = Embedding(num_nodes, hidden_channels, sparse=sparse)
         self.rel_emb = Embedding(num_relations, hidden_channels, sparse=sparse)
+
+        self.weights = torch.nn.Parameter(torch.ones(1))
+        self.bias = torch.nn.Parameter(torch.zeros(1))
 
     def reset_parameters(self):
         r"""Resets all learnable parameters of the module."""
@@ -50,6 +53,30 @@ class KGEModel(torch.nn.Module):
             rel_type (torch.Tensor): The relation type.
             tail_index (torch.Tensor): The tail indices.
         """
+        raise NotImplementedError
+    
+    def get_embeddings(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ):
+        raise NotImplementedError
+    
+    def get_plausibility_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        raise NotImplementedError
+
+    def get_confidence_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
         raise NotImplementedError
 
 
@@ -94,9 +121,11 @@ class TransE(KGEModel):
         hidden_channels: int,
         sparse: bool = False,
         p_norm: float = 1.0,
+        confidence_score_function: str = "logi",
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
         self.p_norm = p_norm
+        self.confidence_score_function = confidence_score_function
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -130,6 +159,34 @@ class TransE(KGEModel):
         head = F.normalize(head, p=self.p_norm, dim=-1)
         tail = F.normalize(tail, p=self.p_norm, dim=-1)
         return head, rel, tail
+    
+    def get_confidence_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor
+    ) -> Tensor:
+        head = self.node_emb(head_index)
+        rel = self.rel_emb(rel_type)
+        tail = self.node_emb(tail_index)
+        head = F.normalize(head, p=self.p_norm, dim=-1)
+        tail = F.normalize(tail, p=self.p_norm, dim=-1)
+        plausibility_score = -((head + rel) - tail).norm(p=self.p_norm, dim=-1)
+        if self.confidence_score_function == "cosine":
+            return (F.cosine_similarity(head + rel, tail, dim=-1) + 1)/2
+        elif self.confidence_score_function == "logi":
+            return torch.sigmoid(self.weights*plausibility_score+self.bias)
+        elif self.confidence_score_function == "rect":
+            return torch.clamp((self.weights*plausibility_score+self.bias), min=0, max=1)
+    
+    def get_plausibility_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        return self.forward(head_index, rel_type, tail_index)
+
 
 class DistMult(KGEModel):
     r"""The DistMult model from the `"Embedding Entities and Relations for
@@ -164,11 +221,11 @@ class DistMult(KGEModel):
         num_nodes: int,
         num_relations: int,
         hidden_channels: int,
-        sparse: bool = False
+        sparse: bool = False,
+        confidence_score_function: str = "logi",
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
-        # self.weights = torch.nn.Parameter(torch.ones(1))
-        # self.bias = torch.nn.Parameter(torch.zeros(1))
+        self.confidence_score_function = confidence_score_function
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -184,8 +241,6 @@ class DistMult(KGEModel):
         head = self.node_emb(head_index)
         rel = self.rel_emb(rel_type)
         tail = self.node_emb(tail_index)
-        # g = (head * rel).sum(dim=-1)
-        # return torch.sigmoid(self.weights*g+self.bias) if self.model_type == "logi" else torch.clamp((self.weights*g+self.bias), min=0, max=1)
         return (head * rel * tail).sum(dim=-1)
 
     def get_embeddings(
@@ -198,6 +253,29 @@ class DistMult(KGEModel):
         rel = self.rel_emb(rel_type)
         tail = self.node_emb(tail_index)
         return head, rel, tail
+    
+    def get_confidence_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor
+    ) -> Tensor:
+        head = self.node_emb(head_index)
+        rel = self.rel_emb(rel_type)
+        tail = self.node_emb(tail_index)
+        plausibility_score = (head * rel * tail).sum(dim=-1)
+        if self.confidence_score_function == "logi":
+            return torch.sigmoid(self.weights*plausibility_score+self.bias)
+        elif self.confidence_score_function == "rect":
+            return torch.clamp((self.weights*plausibility_score+self.bias), min=0, max=1)
+
+    def get_plausibility_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        return self.forward(head_index, rel_type, tail_index)
     
 class ComplEx(KGEModel):
     r"""The ComplEx model from the `"Complex Embeddings for Simple Link
@@ -231,10 +309,12 @@ class ComplEx(KGEModel):
         num_relations: int,
         hidden_channels: int,
         sparse: bool = False,
+        confidence_score_function: str = "logi",
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
         self.node_emb_im = Embedding(num_nodes, hidden_channels, sparse=sparse)
         self.rel_emb_im = Embedding(num_relations, hidden_channels, sparse=sparse)
+        self.confidence_score_function = confidence_score_function
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -274,12 +354,43 @@ class ComplEx(KGEModel):
         tail_im = self.node_emb_im(tail_index)
         return head_re, head_im, rel_re, rel_im, tail_re, tail_im
     
+
+    def get_confidence_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor
+    ) -> Tensor:
+        head_re = self.node_emb(head_index)
+        head_im = self.node_emb_im(head_index)
+        rel_re = self.rel_emb(rel_type)
+        rel_im = self.rel_emb_im(rel_type)
+        tail_re = self.node_emb(tail_index)
+        tail_im = self.node_emb_im(tail_index)
+        plausibility_score = (self.triple_dot(head_re, rel_re, tail_re) +
+                              self.triple_dot(head_im, rel_re, tail_im) + 
+                              self.triple_dot(head_re, rel_im, tail_im) -
+                              self.triple_dot(head_im, rel_im, tail_re))
+        if self.confidence_score_function == "logi":
+            return torch.sigmoid(self.weights*plausibility_score+self.bias)
+        elif self.confidence_score_function == "rect":
+            return torch.clamp((self.weights*plausibility_score+self.bias), min=0, max=1)
+    
     def triple_dot(self,
         a: Tensor,
         b: Tensor,
         c: Tensor,
     ) -> Tensor:
         return (a * b * c).sum(dim=-1)
+    
+
+    def get_plausibility_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        return self.forward(head_index, rel_type, tail_index)
 
 
 class RotatE(KGEModel):
@@ -319,8 +430,10 @@ class RotatE(KGEModel):
         num_relations: int,
         hidden_channels: int,
         sparse: bool = False,
+        confidence_score_function: str = "logi",
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
+        self.confidence_score_function = confidence_score_function
         self.node_emb_im = Embedding(num_nodes, hidden_channels, sparse=sparse) 
         self.reset_parameters()
 
@@ -344,9 +457,9 @@ class RotatE(KGEModel):
         re_score = (rel_re * head_re - rel_im * head_im) - tail_re
         im_score = (rel_re * head_im + rel_im * head_re) - tail_im
         complex_score = torch.stack([re_score, im_score], dim=2)
-        score = torch.linalg.vector_norm(complex_score, dim=(1, 2))
-        return -score
-    
+        score = - torch.linalg.vector_norm(complex_score, dim=(1, 2))
+        return score
+
     def get_embeddings(self, 
         head_index: Tensor, 
         rel_type: Tensor, 
@@ -359,7 +472,51 @@ class RotatE(KGEModel):
         rel_theta = self.rel_emb(rel_type)
         rel_re, rel_im = torch.cos(rel_theta), torch.sin(rel_theta)
         return head_re, head_im, rel_re, rel_im, tail_re, tail_im
+
+
+    def get_confidence_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor
+    ) -> Tensor:
+        head_re = self.node_emb(head_index)
+        head_im = self.node_emb_im(head_index)
+        tail_re = self.node_emb(tail_index)
+        tail_im = self.node_emb_im(tail_index)
+        rel_theta = self.rel_emb(rel_type)
+        rel_re, rel_im = torch.cos(rel_theta), torch.sin(rel_theta)
+        re_score = (rel_re * head_re - rel_im * head_im) - tail_re
+        im_score = (rel_re * head_im + rel_im * head_re) - tail_im
+        complex_score = torch.stack([re_score, im_score], dim=2)
+        plausibility_score = - torch.linalg.vector_norm(complex_score, dim=(1, 2))
+        if self.confidence_score_function == "logi":
+            return torch.sigmoid(self.weights*plausibility_score+self.bias)
+        elif self.confidence_score_function == "rect":
+            return torch.clamp((self.weights*plausibility_score+self.bias), min=0, max=1)
+
+    def get_plausibility_score(
+        self,
+        head_index: Tensor,
+        rel_type: Tensor,
+        tail_index: Tensor,
+    ) -> Tensor:
+        return self.forward(head_index, rel_type, tail_index)
         
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     from ukge.datasets import KGTripleDataset
@@ -372,17 +529,20 @@ if __name__ == "__main__":
     print(pos_hrt.shape, score.shape, neg_hn_rt.shape, neg_hr_tn.shape)
     
     print("=============================TransE=============================T")
-    model = TransE(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    model = TransE(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128, confidence_score_function="rect")
     head, rel, tail = model.get_embeddings(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
     print(head.shape, rel.shape, tail.shape)
     plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    confidence_score = model.get_confidence_score(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
     print(plausibility_score)
+    print(confidence_score)
 
     print("=============================DistMult=============================T")
-    model = DistMult(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
+    model = DistMult(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128, confidence_score_function="logi")
     head, rel, tail = model.get_embeddings(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
     print(head.shape, rel.shape, tail.shape)
     plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+    confidence_score = model.get_confidence_score(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
     print(plausibility_score)
 
     print("=============================ComplEx=============================T")
@@ -391,6 +551,7 @@ if __name__ == "__main__":
     print(print(head_re.shape, head_im.shape, rel_re.shape, rel_im.shape, tail_re.shape, tail_im.shape))
     plausibility_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
     print(plausibility_score)
+    print(confidence_score)
 
     print("=============================RotatE=============================T")
     model = RotatE(num_nodes=train_data.num_cons(), num_relations=train_data.num_rels(), hidden_channels=128)
