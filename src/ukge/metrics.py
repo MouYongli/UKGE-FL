@@ -36,7 +36,6 @@ class Evaluator(object):
     def __init__(self, dataloader: KGTripleDataset, model: KGEModel, batch_size: int = 1024, device = None):
         self.dataloader = dataloader
         self.model = model
-        
         self.hrtw_map = self.dataloader.dataset.get_hrtw_map() # hrtw_map: {h: {r: {t: w}}}，只对于选择的dataset
         self.hr_all_tw_map = self.dataloader.dataset.get_hr_all_tw_map()
         self.num_cons = self.dataloader.dataset.num_cons()
@@ -65,6 +64,26 @@ class Evaluator(object):
             for r in self.hrtw_map[h].keys():
                 self.hr_scores_map[h][r] = self.get_hr_scores(h, r) # list of scores for all tail entities（但没有显示对应的tail index
 
+    def get_f1(self, threshold :float = 0.7) ->  Tuple[Tuple[float], Tuple[float], Tuple[float]]:
+        """
+        Calculate the F1 score of the given list of (h, r, t, w, w_hat) tuples.
+        """
+        w = np.array([self.hrtw_map[h][r][t] for h in self.hrtw_map.keys() for r in self.hrtw_map[h].keys() for t in self.hrtw_map[h][r].keys()])
+        w_hat = np.array([self.hr_scores_map[h][r][t]for h in self.hrtw_map.keys() for r in self.hrtw_map[h].keys() for t in self.hrtw_map[h][r].keys()])
+        w = (w > threshold).astype(int)
+        p, r, f = [], [], []
+        for t in np.arange(0, 1, 0.5):
+            w_hat_t = (w_hat > t).astype(int)
+            tp = np.sum(w * w_hat_t)
+            fp = np.sum((1 - w) * w_hat_t)
+            fn = np.sum(w * (1 - w_hat_t))
+            precision = tp / (tp + fp) if tp + fp > 0 else 0
+            recall = tp / (tp + fn) if tp + fn > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+            p.append(precision)
+            r.append(recall)
+            f.append(f1)
+        return f, r, f
 
     def get_mse(self) -> float:
         """
@@ -103,7 +122,6 @@ class Evaluator(object):
         Calculate the nDCG of the given list of (t, w) tuples.
         """
         ts = [tw.index for tw in tw_truth]  
-
         scores_array = np.array(self.hr_scores_map[h][r]) #hr_scores_map是list of scores for all tail entities（但没有显示对应的tail index
         scores_rank_array = scores_array.argsort()[::-1].argsort() + 1 #计算scores_array的排名（返回的是每个array对应的排名
         ranks = np.array([scores_rank_array[i] for i in ts]) #是不是默认scores array是按照index排序的（？
