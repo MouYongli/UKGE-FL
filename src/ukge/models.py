@@ -32,8 +32,10 @@ class KGEModel(torch.nn.Module):
         self.node_emb = Embedding(num_nodes, hidden_channels, sparse=sparse)
         self.rel_emb = Embedding(num_relations, hidden_channels, sparse=sparse)
 
-        self.weights = torch.nn.Parameter(torch.ones(1))
-        self.bias = torch.nn.Parameter(torch.zeros(1))
+        self.fc_in = torch.nn.Linear(1, 8)
+        self.fc_out = torch.nn.Linear(8, 1)
+        # self.weights = torch.nn.Parameter(torch.ones(1))
+        # self.bias = torch.nn.Parameter(torch.zeros(1))
 
     def reset_parameters(self):
         r"""Resets all learnable parameters of the module."""
@@ -120,7 +122,7 @@ class TransE(KGEModel):
         num_relations: int,
         hidden_channels: int,
         sparse: bool = False,
-        p_norm: float = 1.0,
+        p_norm: float = 2.0,
         confidence_score_function: str = "logi",
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse)
@@ -175,7 +177,7 @@ class TransE(KGEModel):
         if self.confidence_score_function == "cosine":
             return (F.cosine_similarity(head + rel, tail, dim=-1) + 1)/2
         elif self.confidence_score_function == "logi":
-            return torch.sigmoid(self.weights*plausibility_score+self.bias)
+            return torch.sigmoid(self.fc_out(F.relu(self.fc_in(plausibility_score.view(-1, 1))))).view(-1)
         elif self.confidence_score_function == "rect":
             return torch.clamp((self.weights*plausibility_score+self.bias), min=0, max=1)
     
@@ -265,7 +267,7 @@ class DistMult(KGEModel):
         tail = self.node_emb(tail_index)
         plausibility_score = (head * rel * tail).sum(dim=-1)
         if self.confidence_score_function == "logi":
-            return torch.sigmoid(self.weights*plausibility_score+self.bias)
+            return torch.sigmoid(self.fc_out(F.relu(self.fc_in(plausibility_score.view(-1, 1))))).view(-1)
         elif self.confidence_score_function == "rect":
             return torch.clamp((self.weights*plausibility_score+self.bias), min=0, max=1)
 

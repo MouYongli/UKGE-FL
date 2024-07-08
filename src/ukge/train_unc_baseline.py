@@ -41,16 +41,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['transe','distmult','complex','rotate'])
     parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
-    parser.add_argument('--num_neg_per_positive', default=10, type=int)
+    parser.add_argument('--num_neg_per_positive', default=100, type=int)
+    parser.add_argument('--confidence_score_function', default='logi', type=str, choices=['logi', 'rect', 'cosine'])
     parser.add_argument('--hidden_dim', default=128, type=int)
-    parser.add_argument('--threshold', default=0.5, type=float)
     parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument('--lr', default=0.01, type=float)
-    parser.add_argument('--weight_decay', default=0.005, type=float)
+    parser.add_argument('--weight_decay', default=0.0005, type=float)
     args = parser.parse_args()
 
-    exp_dir = osp.join(work_dir, f'det_{args.dataset}_{args.model}', f'lr_{args.lr}_hidden_dim_{args.hidden_dim}_threshold_{args.threshold}')
+    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}', f'lr_{args.lr}_hidden_dim_{args.hidden_dim}_confi_{args.confidence_score_function}')
     if not osp.exists(exp_dir):
         os.makedirs(exp_dir)
 
@@ -59,21 +59,21 @@ def main():
     if os.path.exists(train_log_file):
         os.remove(train_log_file)
     with open(train_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'Step', 'Loss']) + '\n')
+        file.write(','.join(['Epoch', 'Step', 'Loss', 'Pos_Loss', 'Neg_Loss']) + '\n')
 
     val_log_file = os.path.join(exp_dir, 'val_metrics.csv')
     if os.path.exists(val_log_file):
         os.remove(val_log_file)
     with open(val_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'nDCG_lin', 'nDCG_exp']) + '\n')
+        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp']) + '\n')
 
     test_log_file = os.path.join(exp_dir, 'test_metrics.csv')
     if os.path.exists(test_log_file):
         os.remove(test_log_file)
     with open(test_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'nDCG_lin', 'nDCG_exp']) + '\n')
+        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp'])  + '\n')
     
-    train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive, deterministic=True, threshold=args.threshold)
+    train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive, deterministic=False)
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
     test_dataset = KGTripleDataset(dataset=args.dataset, split='test')
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -81,77 +81,116 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim).to(device)
-    criterion = loss_map[args.model]
+    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, confidence_score_function=args.confidence_score_function).to(device)
+    criterion = nn.MSELoss()
 
     val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
     test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device)
     optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.999), lr=args.lr, weight_decay=args.weight_decay)
 
-    best_ndcg = 0.0
-    best_ndcg_epoch = 0
+    best_ndcg_lin = 0.0
+    best_ndcg_lin_epoch = 0
+    best_ndcg_exp = 0.0
+    best_ndcg_exp_epoch = 0
+    best_mae = float('inf')
+    best_mae_epoch = 0
+    best_mse = float('inf')
+    best_mse_epoch = 0
 
     for epoch in range(args.num_epochs):
         model.train()
         loss_total = 0.0
-        for idx, (pos_hrt, pos_score, neg_hn_rt, neg_hr_tn) in enumerate(train_dataloader):
-            pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.long(), pos_score.float(), neg_hn_rt.long(), neg_hr_tn.long()
-            pos_hrt, pos_score, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_score.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device) 
+        pos_loss_total = 0.0
+        neg_loss_total = 0.0
+
+        for idx, (pos_hrt,pos_target, neg_hn_rt, neg_hr_tn) in enumerate(train_dataloader):
+            pos_hrt, pos_target, neg_hn_rt, neg_hr_tn = pos_hrt.long(), pos_target.float(), neg_hn_rt.long(), neg_hr_tn.long()
+            pos_hrt, pos_target, neg_hn_rt, neg_hr_tn = pos_hrt.to(device), pos_target.to(device), neg_hn_rt.to(device), neg_hr_tn.to(device) 
             neg_hn_rt = neg_hn_rt.view(-1, neg_hn_rt.size(-1))
             neg_hr_tn = neg_hr_tn.view(-1, neg_hr_tn.size(-1))
+
             optimizer.zero_grad()
-            verbose = True if  idx == 100 else False
-            pred_pos_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
-            pred_neg_h_score = model(neg_hn_rt[:, 0], neg_hn_rt[:, 1], neg_hn_rt[:, 2])
-            pred_neg_t_score = model(neg_hr_tn[:, 0], neg_hr_tn[:, 1], neg_hr_tn[:, 2])
-            if args.model == 'transe' or args.model == 'distmult':
-                loss_hn = criterion(pred_pos_score, pred_neg_h_score, args.num_neg_per_positive, verbose=verbose)
-                loss_tn = criterion(pred_pos_score, pred_neg_t_score, args.num_neg_per_positive, verbose=verbose)
-            elif args.model == 'complex' or args.model == 'rotate':
-                loss_hn = criterion(pred_pos_score, pred_neg_h_score, verbose=verbose)
-                loss_tn = criterion(pred_pos_score, pred_neg_t_score, verbose=verbose)
-            else:
-                raise ValueError(f"Model {args.model} not supported")
-            loss = loss_hn + loss_tn
+
+            pred_pos_score = model.get_confidence_score(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
+            pred_neg_hn_score = model.get_confidence_score(neg_hn_rt[:, 0], neg_hn_rt[:, 1], neg_hn_rt[:, 2])
+            pred_neg_tn_score = model.get_confidence_score(neg_hr_tn[:, 0], neg_hr_tn[:, 1], neg_hr_tn[:, 2])
+            neg_target = torch.zeros_like(pred_neg_hn_score)           
+
+            pos_loss = criterion(pred_pos_score, pos_target)
+            neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2
+            loss = pos_loss + neg_loss
+
             loss.backward()
             optimizer.step()
+            
+            pos_loss_total += pos_loss.item()
+            neg_loss_total += neg_loss.item()
             loss_total += loss.item()
+
             with open(train_log_file, 'a') as file:
-                file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f}\n")
+                file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{pos_loss.item():.4f},{neg_loss.item()}\n")
             if idx % 10 == 0:
-                print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}    ")
+                print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Positive Loss: {pos_loss.item():.4f}, Negative Loss: {neg_loss.item():.4f}")
+        
         with open(train_log_file, 'a') as file:
-            file.write(f"{epoch + 1}, -1, {loss_total/len(train_dataloader):.4f}\n")
-        print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {loss_total/len(train_dataloader):.4f}")
+            file.write(f"{epoch + 1}, -1, {loss_total/len(train_dataloader):.4f}, {pos_loss_total/len(train_dataloader):.4f}, {neg_loss_total/len(train_dataloader):.4f}\n")
+        print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {loss_total/len(train_dataloader):.4f}, Positive Loss: {pos_loss_total/len(train_dataloader):.4f}, Negative Loss: {neg_loss_total/len(train_dataloader):.4f}")
         
         model.eval()
         val_evaluator.update_hr_scores_map()
-        mean_ndcg = val_evaluator.get_mean_ndcg()
+        val_mean_ndcg = val_evaluator.get_mean_ndcg()
+        val_mse = val_evaluator.get_mse()
+        val_mae = val_evaluator.get_mae()
 
-        pos_hrt, score = next(iter(val_dataloader))
-        pos_hrt = pos_hrt.long()
-        pos_hrt = pos_hrt.to(device)
-        pred_score = model(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
-        print(f"Pred Score: {pred_score[0:10]}", f"True Score: {score[0:10]}")
         with open(val_log_file, 'a') as file:
-            file.write(f"{epoch + 1},{mean_ndcg[0]:.4f},{mean_ndcg[1]:.4f}\n")
-        print(f"Mean nDCG: {mean_ndcg[0]:.4f}, Exponential Mean nDCG: {mean_ndcg[1]:.4f}")
+            file.write(f"{epoch + 1}, {val_mse:.4f}, {val_mae:.4f}, {val_mean_ndcg[0]:.4f},{val_mean_ndcg[1]:.4f}\n")
+        print(f"Validation\nMSE: {val_mse:.4f}, MAE: {val_mae:.4f}, Mean nDCG: {val_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {val_mean_ndcg[1]:.4f}")
 
-        if mean_ndcg[0] > best_ndcg:
-            best_ndcg = mean_ndcg[0]
-            best_ndcg_epoch = epoch + 1
+        if val_mean_ndcg[0] > best_ndcg_lin:
+            best_ndcg_lin = val_mean_ndcg[0]
+            best_ndcg_lin_epoch = epoch + 1
             torch.save({
                 'state_dict': model.state_dict(),
-                'best_ndcg': best_ndcg,
-                'best_ndcg_epoch': best_ndcg_epoch
-                }, osp.join(exp_dir, 'best_model.pth'))
+                'best_ndcg_lin': best_ndcg_lin,
+                'best_ndcg_lin_epoch': best_ndcg_lin_epoch
+                }, osp.join(exp_dir, 'best_model_ndcg_lin.pth'))
         
+        if val_mean_ndcg[1] > best_ndcg_exp:
+            best_ndcg_exp = val_mean_ndcg[1]
+            best_ndcg_exp_epoch = epoch + 1
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_ndcg_exp': best_ndcg_exp,
+                'best_ndcg_exp_epoch': best_ndcg_exp_epoch
+                }, osp.join(exp_dir, 'best_model_ndcg_exp.pth'))
+        
+        if val_mae < best_mae:
+            best_mae = val_mae
+            best_mae_epoch = epoch + 1
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_mae': best_mae,
+                'best_mae_epoch': best_mae_epoch
+                }, osp.join(exp_dir, 'best_model_mae.pth'))
+        
+        if val_mse < best_mse:
+            best_mse = val_mse
+            best_mse_epoch = epoch + 1
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_mse': best_mse,
+                'best_mse_epoch': best_mse_epoch
+                }, osp.join(exp_dir, 'best_model_mse.pth'))
+
         model.eval()
         test_evaluator.update_hr_scores_map()
-        mean_ndcg = test_evaluator.get_mean_ndcg()
+        test_mean_ndcg = test_evaluator.get_mean_ndcg()
+        test_mse = test_evaluator.get_mse()
+        test_mae = test_evaluator.get_mae()
+    
         with open(test_log_file, 'a') as file:
-            file.write(f"{epoch + 1},{mean_ndcg[0]:.4f},{mean_ndcg[1]:.4f}\n")
-        print(f"Mean nDCG: {mean_ndcg[0]:.4f}, Exponential Mean nDCG: {mean_ndcg[1]:.4f}")
+            file.write(f"{epoch + 1},{test_mse:.4f}, {test_mae:.4f}, {test_mean_ndcg[0]:.4f},{test_mean_ndcg[1]:.4f}\n")
+        print(f"Test\nMSE: {test_mse:.4f}, MAE: {test_mae:.4f}, Mean nDCG: {test_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {test_mean_ndcg[1]:.4f}")
         
 if __name__ == "__main__":
     main()

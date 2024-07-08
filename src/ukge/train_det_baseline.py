@@ -88,8 +88,10 @@ def main():
     test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device)
     optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.999), lr=args.lr, weight_decay=args.weight_decay)
 
-    best_ndcg = 0.0
-    best_ndcg_epoch = 0
+    best_ndcg_lin = 0.0
+    best_ndcg_lin_epoch = 0
+    best_ndcg_exp = 0.0
+    best_ndcg_exp_epoch = 0
 
     for epoch in range(args.num_epochs):
         model.train()
@@ -138,15 +140,26 @@ def main():
             file.write(f"{epoch + 1},{mean_ndcg[0]:.4f},{mean_ndcg[1]:.4f}\n")
         print(f"Mean nDCG: {mean_ndcg[0]:.4f}, Exponential Mean nDCG: {mean_ndcg[1]:.4f}")
 
-        if mean_ndcg[0] > best_ndcg:
-            best_ndcg = mean_ndcg[0]
-            best_ndcg_epoch = epoch + 1
+        if mean_ndcg[0] > best_ndcg_lin:
+            best_ndcg_lin = mean_ndcg[0]
+            best_ndcg_lin_epoch = epoch + 1
             torch.save({
                 'state_dict': model.state_dict(),
-                'best_ndcg': best_ndcg,
-                'best_ndcg_epoch': best_ndcg_epoch
-                }, osp.join(exp_dir, 'best_model.pth'))
+                'best_ndcg_lin': best_ndcg_lin,
+                'best_ndcg_lin_epoch': best_ndcg_lin_epoch
+                }, osp.join(exp_dir, 'best_model_ndcg_lin.pth'))
         
+        if mean_ndcg[1] > best_ndcg_exp:
+            best_ndcg_exp = mean_ndcg[1]
+            best_ndcg_exp_epoch = epoch + 1
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_ndcg_exp': best_ndcg_exp,
+                'best_ndcg_exp_epoch': best_ndcg_exp_epoch
+                }, osp.join(exp_dir, 'best_model_ndcg_exp.pth'))
+        
+
+
         model.eval()
         test_evaluator.update_hr_scores_map()
         mean_ndcg = test_evaluator.get_mean_ndcg()

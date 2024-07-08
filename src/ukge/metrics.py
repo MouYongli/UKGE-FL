@@ -54,7 +54,7 @@ class Evaluator(object):
             batch_t = torch.arange(t, min(t + self.batch_size, self.num_cons)).to(self.device)
             batch_h = torch.full_like(batch_t, h).to(self.device)
             batch_r = torch.full_like(batch_t, r).to(self.device)
-            batch_scores = self.model(batch_h, batch_r, batch_t)
+            batch_scores = self.model.get_confidence_score(batch_h, batch_r, batch_t)
             scores.extend(batch_scores.detach().cpu().numpy().tolist())
         return scores
     
@@ -127,7 +127,6 @@ class Evaluator(object):
         ranks = np.array([scores_rank_array[i] for i in ts]) #是不是默认scores array是按照index排序的（？
         #这里的
     
-        
         # linear gain
         gains = np.array([tw.score for tw in tw_truth])
         discounts = np.log2(ranks + 1)
