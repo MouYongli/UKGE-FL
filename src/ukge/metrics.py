@@ -33,7 +33,7 @@ class IndexScore:
 
 
 class Evaluator(object):
-    def __init__(self, dataloader: KGTripleDataset, model: KGEModel, batch_size: int = 1024, device = None):
+    def __init__(self, dataloader: KGTripleDataset, model: KGEModel, batch_size: int = 1024, device = None, topk=200):
         self.dataloader = dataloader
         self.model = model
         self.hrtw_map = self.dataloader.dataset.get_hrtw_map() # hrtw_map: {h: {r: {t: w}}}，只对于选择的dataset
@@ -42,8 +42,13 @@ class Evaluator(object):
 
         self.batch_size = batch_size
         self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
         self.hr_scores_map = {h:{r:[]} for h in self.hrtw_map.keys() for r in self.hrtw_map[h].keys()}
+
+        # Filter out top 200 h,r based on the number of t
+        hr_num_t = {(h, r): len(self.hr_all_tw_map[h][r]) for h in self.hr_all_tw_map.keys() for r in self.hr_all_tw_map[h].keys()}
+        sorted_hr_num_t = sorted(hr_num_t.items(), key=lambda item: item[1], reverse=True)
+        top_200_hr_num_t = sorted_hr_num_t[:topk]
+        self.topk_hr_all_tw_map = {(h, r): self.hr_all_tw_map[h][r] for (h, r), _ in top_200_hr_num_t}
 
     def get_hr_scores(self, h: int, r: int) -> List[float]:
         """
@@ -163,3 +168,21 @@ class Evaluator(object):
                 exp_ndcg_sum += exp_ndcg
                 count += 1
         return ndcg_sum / count, exp_ndcg_sum / count
+
+    def get_mean_ndcg_topk(self):
+        """
+        Calculate the mean NDCG of the given list of (h, r, t, w, w') tuples.
+        """
+        ndcg_sum = 0  # nDCG with linear gain
+        exp_ndcg_sum = 0  # nDCG with exponential gain
+        count = 0
+        for (h, r) in self.topk_hr_all_tw_map.keys():
+            tw_dict = self.topk_hr_all_tw_map[h, r]
+            tw_truth = [IndexScore(t, w) for t, w in tw_dict.items()]
+            tw_truth.sort(reverse=True)  # descending on w
+            ndcg, exp_ndcg = self.ndcg(h, r, tw_truth)  # nDCG with linear gain and exponential gain
+            ndcg_sum += ndcg
+            exp_ndcg_sum += exp_ndcg
+            count += 1
+        return ndcg_sum / count, exp_ndcg_sum / count
+
