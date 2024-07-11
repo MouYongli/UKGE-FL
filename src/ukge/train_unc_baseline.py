@@ -37,20 +37,31 @@ work_dir = osp.join(here, '../../', 'results')
 if not osp.exists(work_dir):
     os.makedirs(work_dir)
 
+
+def set_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['transe','distmult','complex','rotate'])
     parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
-    parser.add_argument('--num_neg_per_positive', default=100, type=int)
+    parser.add_argument('--num_neg_per_positive', default=10, type=int)
     parser.add_argument('--confidence_score_function', default='logi', type=str, choices=['logi', 'rect', 'cosine'])
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
-    parser.add_argument('--batch_size', default=1024, type=int)
-    parser.add_argument('--lr', default=0.01, type=float)
-    parser.add_argument('--weight_decay', default=0.0005, type=float)
+    parser.add_argument('--batch_size', default=512, type=int)
+    parser.add_argument('--lr', default=0.001, type=float)
+    parser.add_argument('--weight_decay', default=0.005, type=float)
+    parser.add_argument('--topk', default=200, type=int)
+    parser.add_argument('--seed', default=42, type=int)
     args = parser.parse_args()
 
-    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}', f'lr_{args.lr}_hidden_dim_{args.hidden_dim}_confi_{args.confidence_score_function}')
+    set_seed(args.seed)
+
+    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}_confi_{args.confidence_score_function}', f'lr_{args.lr}_wd_{args.weight_decay}_dim_{args.hidden_dim}')
     if not osp.exists(exp_dir):
         os.makedirs(exp_dir)
 
@@ -65,13 +76,13 @@ def main():
     if os.path.exists(val_log_file):
         os.remove(val_log_file)
     with open(val_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp']) + '\n')
+        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
 
     test_log_file = os.path.join(exp_dir, 'test_metrics.csv')
     if os.path.exists(test_log_file):
         os.remove(test_log_file)
     with open(test_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp'])  + '\n')
+        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
     
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive, deterministic=False)
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
@@ -96,6 +107,10 @@ def main():
     best_mae_epoch = 0
     best_mse = float('inf')
     best_mse_epoch = 0
+    best_ndcg_lin_topk = 0.0
+    best_ndcg_lin_topk_epoch = 0
+    best_ndcg_exp_topk = 0.0
+    best_ndcg_exp_topk_epoch = 0
 
     for epoch in range(args.num_epochs):
         model.train()
@@ -119,18 +134,22 @@ def main():
             pos_loss = criterion(pred_pos_score, pos_target)
             neg_loss = (criterion(pred_neg_hn_score, neg_target) + criterion(pred_neg_tn_score, neg_target)) / 2
             loss = pos_loss + neg_loss
-
             loss.backward()
             optimizer.step()
-            
+
             pos_loss_total += pos_loss.item()
             neg_loss_total += neg_loss.item()
             loss_total += loss.item()
 
             with open(train_log_file, 'a') as file:
                 file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{pos_loss.item():.4f},{neg_loss.item()}\n")
-            if idx % 10 == 0:
+            if idx % 200 == 0:
                 print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Positive Loss: {pos_loss.item():.4f}, Negative Loss: {neg_loss.item():.4f}")
+                for name, param in model.named_parameters():
+                    if name == 'node_emb.weight':
+                        print(f"\tNode Embedding Gradients: {param.grad[0,:5]}")
+                    if name == 'rel_emb.weight':
+                        print(f"\tRelation Embedding Gradients: {param.grad[0,:5]}")
         
         with open(train_log_file, 'a') as file:
             file.write(f"{epoch + 1}, -1, {loss_total/len(train_dataloader):.4f}, {pos_loss_total/len(train_dataloader):.4f}, {neg_loss_total/len(train_dataloader):.4f}\n")
@@ -139,12 +158,13 @@ def main():
         model.eval()
         val_evaluator.update_hr_scores_map()
         val_mean_ndcg = val_evaluator.get_mean_ndcg()
+        val_mean_ndcg_topk = val_evaluator.get_mean_ndcg_topk()
         val_mse = val_evaluator.get_mse()
         val_mae = val_evaluator.get_mae()
 
         with open(val_log_file, 'a') as file:
-            file.write(f"{epoch + 1}, {val_mse:.4f}, {val_mae:.4f}, {val_mean_ndcg[0]:.4f},{val_mean_ndcg[1]:.4f}\n")
-        print(f"Validation\nMSE: {val_mse:.4f}, MAE: {val_mae:.4f}, Mean nDCG: {val_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {val_mean_ndcg[1]:.4f}")
+            file.write(f"{epoch + 1}, {val_mse:.4f}, {val_mae:.4f}, {val_mean_ndcg[0]:.4f},{val_mean_ndcg[1]:.4f}, {val_mean_ndcg_topk[0]:.4f}, {val_mean_ndcg_topk[1]:.4f}\n")
+        print(f"Validation\nMSE: {val_mse:.4f}, MAE: {val_mae:.4f}, Mean nDCG: {val_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {val_mean_ndcg[1]:.4f}, Mean nDCG top 200: {val_mean_ndcg_topk[0]:.4f}, Exponential Mean nDCG top 200: {val_mean_ndcg_topk[1]:.4f}")
 
         if val_mean_ndcg[0] > best_ndcg_lin:
             best_ndcg_lin = val_mean_ndcg[0]
@@ -163,6 +183,24 @@ def main():
                 'best_ndcg_exp': best_ndcg_exp,
                 'best_ndcg_exp_epoch': best_ndcg_exp_epoch
                 }, osp.join(exp_dir, 'best_model_ndcg_exp.pth'))
+        
+        if val_mean_ndcg_topk[0] > best_ndcg_lin_topk:
+            best_ndcg_lin_topk = val_mean_ndcg_topk[0]
+            best_ndcg_lin_topk_epoch = epoch + 1
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_ndcg_lin_topk': best_ndcg_lin_topk,
+                'best_ndcg_lin_topk_epoch': best_ndcg_lin_topk_epoch
+                }, osp.join(exp_dir, 'best_model_ndcg_lin_topk.pth'))
+        
+        if val_mean_ndcg_topk[1] > best_ndcg_exp_topk:
+            best_ndcg_exp_topk = val_mean_ndcg_topk[1]
+            best_ndcg_exp_topk_epoch = epoch + 1
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_ndcg_exp_topk': best_ndcg_exp_topk,
+                'best_ndcg_exp_topk_epoch': best_ndcg_exp_topk_epoch
+                }, osp.join(exp_dir, 'best_model_ndcg_exp_topk.pth'))
         
         if val_mae < best_mae:
             best_mae = val_mae
@@ -185,12 +223,13 @@ def main():
         model.eval()
         test_evaluator.update_hr_scores_map()
         test_mean_ndcg = test_evaluator.get_mean_ndcg()
+        test_mean_ndcg_topk = test_evaluator.get_mean_ndcg_topk()
         test_mse = test_evaluator.get_mse()
         test_mae = test_evaluator.get_mae()
     
         with open(test_log_file, 'a') as file:
-            file.write(f"{epoch + 1},{test_mse:.4f}, {test_mae:.4f}, {test_mean_ndcg[0]:.4f},{test_mean_ndcg[1]:.4f}\n")
-        print(f"Test\nMSE: {test_mse:.4f}, MAE: {test_mae:.4f}, Mean nDCG: {test_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {test_mean_ndcg[1]:.4f}")
-        
+            file.write(f"{epoch + 1},{test_mse:.4f}, {test_mae:.4f}, {test_mean_ndcg[0]:.4f},{test_mean_ndcg[1]:.4f}, {test_mean_ndcg_topk[0]:.4f},{test_mean_ndcg_topk[1]:.4f}\n")
+        print(f"Test\nMSE: {test_mse:.4f}, MAE: {test_mae:.4f}, Mean nDCG: {test_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {test_mean_ndcg[1]:.4f}, Mean nDCG top 200: {test_mean_ndcg_topk[0]:.4f}, Exponential Mean nDCG top 200: {test_mean_ndcg_topk[1]:.4f}")
+
 if __name__ == "__main__":
     main()

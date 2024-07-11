@@ -37,6 +37,12 @@ work_dir = osp.join(here, '../../', 'results')
 if not osp.exists(work_dir):
     os.makedirs(work_dir)
 
+def set_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['transe','distmult','complex','rotate'])
@@ -48,13 +54,17 @@ def main():
     parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument('--lr', default=0.01, type=float)
     parser.add_argument('--weight_decay', default=0.005, type=float)
+    parser.add_argument('--topk', default=200, type=int)
+    parser.add_argument('--seed', default=42, type=int)
+
     args = parser.parse_args()
+
+    set_seed(args.seed)
 
     exp_dir = osp.join(work_dir, f'det_{args.dataset}_{args.model}', f'lr_{args.lr}_hidden_dim_{args.hidden_dim}_threshold_{args.threshold}')
     if not osp.exists(exp_dir):
         os.makedirs(exp_dir)
 
-    # Create a CSV file to save losses and metrics
     train_log_file = os.path.join(exp_dir, 'train_metrics.csv')
     if os.path.exists(train_log_file):
         os.remove(train_log_file)
@@ -65,13 +75,13 @@ def main():
     if os.path.exists(val_log_file):
         os.remove(val_log_file)
     with open(val_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'nDCG_lin', 'nDCG_exp']) + '\n')
+        file.write(','.join(['Epoch', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
 
     test_log_file = os.path.join(exp_dir, 'test_metrics.csv')
     if os.path.exists(test_log_file):
         os.remove(test_log_file)
     with open(test_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'nDCG_lin', 'nDCG_exp']) + '\n')
+        file.write(','.join(['Epoch', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
     
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive, deterministic=True, threshold=args.threshold)
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
@@ -83,15 +93,19 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim).to(device)
     criterion = loss_map[args.model]
-
-    val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
-    test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device)
     optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.999), lr=args.lr, weight_decay=args.weight_decay)
 
+    val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+    test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+    
     best_ndcg_lin = 0.0
     best_ndcg_lin_epoch = 0
     best_ndcg_exp = 0.0
     best_ndcg_exp_epoch = 0
+    best_ndcg_lin_top200 = 0.0
+    best_ndcg_lin_top200epoch = 0
+    best_ndcg_exp_top200 = 0.0
+    best_ndcg_exp_top200_epoch = 0
 
     for epoch in range(args.num_epochs):
         model.train()
