@@ -34,11 +34,13 @@ class KGEModel(torch.nn.Module):
 
         self.fc = torch.nn.Sequential(
             # torch.nn.Linear(1, 1, bias=True),
+
             # torch.nn.Linear(1, 32, bias=True),
             # torch.nn.ReLU(inplace=True),
             # torch.nn.Linear(32, 32, bias=False),
             # torch.nn.ReLU(inplace=True),
             # torch.nn.Linear(32, 1, bias=False),
+            
             torch.nn.Sigmoid()
         )
 
