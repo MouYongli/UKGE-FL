@@ -3,11 +3,11 @@ import os.path as osp
 import numpy as np
 import pandas as pd
 import argparse
-
 from ukge.datasets import KGTripleDataset
 from ukge.models import TransE, DistMult, ComplEx, RotatE
 from ukge.losses import compute_det_transe_distmult_loss, compute_det_complex_loss, compute_det_rotate_loss
 from ukge.metrics import Evaluator
+
 
 import torch
 import torch.optim as optim
@@ -146,6 +146,7 @@ def main():
                 file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{pos_loss.item():.4f},{neg_loss.item()}\n")
             if idx % 200 == 0:
                 print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Positive Loss: {pos_loss.item():.4f}, Negative Loss: {neg_loss.item():.4f}")
+                
                 for name, param in model.named_parameters():
                     if name == 'node_emb.weight':
                         print(f"\tNode Embedding Gradients: {param.grad[0,:5]}")
