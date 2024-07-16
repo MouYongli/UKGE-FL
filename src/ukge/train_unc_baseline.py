@@ -1,5 +1,6 @@
 import os
 import os.path as osp
+import shutil
 import numpy as np
 import pandas as pd
 import argparse
@@ -49,42 +50,44 @@ def main():
     parser.add_argument('--model', type=str.lower, default='distmult', choices=['transe','distmult','complex','rotate'])
     parser.add_argument('--dataset', type=str.lower, default='cn15k', choices=['cn15k', 'nl27k', 'ppi5k'])
     parser.add_argument('--num_neg_per_positive', default=10, type=int)
-    parser.add_argument('--confidence_score_function', default='logi', type=str, choices=['logi', 'rect', 'cosine'])
+    parser.add_argument('--confidence_score_function', default='logi', type=str, choices=['logi', 'rect'])
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
-    parser.add_argument('--batch_size', default=512, type=int)
-    parser.add_argument('--test_batch_size', default=10240, type=int)
-    parser.add_argument('--lr', default=0.001, type=float)
-    parser.add_argument('--weight_decay', default=0.005, type=float)
+    parser.add_argument('--batch_size', default=1024, type=int)
+    parser.add_argument('--test_batch_size', default=1024, type=int)
+    parser.add_argument('--lr', default=0.01, type=float)
+    parser.add_argument('--weight_decay', default=0.0, type=float)
     parser.add_argument('--topk', default=200, type=int)
+    parser.add_argument('--fc_layers', default='', type=str, choices=['l1', 'l3', 'none'])
+    parser.add_argument('--bias', default=False, type=bool)
     parser.add_argument('--seed', default=42, type=int)
     args = parser.parse_args()
 
     set_seed(args.seed)
 
-    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}_confi_{args.confidence_score_function}', f'lr_{args.lr}_wd_{args.weight_decay}_dim_{args.hidden_dim}')
-    if not osp.exists(exp_dir):
-        os.makedirs(exp_dir)
+    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}_confi_{args.confidence_score_function}_fc_{args.fc_layers}_bias_{args.bias}_dim_{args.hidden_dim}', f'lr_{args.lr}_wd_{args.weight_decay}')
+
+    if osp.exists(exp_dir):
+        shutil.rmtree(exp_dir)
+    os.makedirs(exp_dir)
 
     # Create a CSV file to save losses and metrics
     train_log_file = os.path.join(exp_dir, 'train_metrics.csv')
-    if os.path.exists(train_log_file):
-        os.remove(train_log_file)
     with open(train_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'Step', 'Loss', 'Pos_Loss', 'Neg_Loss']) + '\n')
 
     val_log_file = os.path.join(exp_dir, 'val_metrics.csv')
-    if os.path.exists(val_log_file):
-        os.remove(val_log_file)
     with open(val_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
 
+    val_f1_log_file = os.path.join(exp_dir, 'val_f1.npy')
+
     test_log_file = os.path.join(exp_dir, 'test_metrics.csv')
-    if os.path.exists(test_log_file):
-        os.remove(test_log_file)
     with open(test_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
     
+    test_f1_log_file = os.path.join(exp_dir, 'test_f1.npy')
+
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive, deterministic=False)
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
     test_dataset = KGTripleDataset(dataset=args.dataset, split='test')
@@ -93,7 +96,7 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, confidence_score_function=args.confidence_score_function).to(device)
+    model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, confidence_score_function=args.confidence_score_function, fc_layers=args.fc_layers, bias=args.bias).to(device)
     criterion = nn.MSELoss()
 
     val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
@@ -112,6 +115,7 @@ def main():
     best_ndcg_lin_topk_epoch = 0
     best_ndcg_exp_topk = 0.0
     best_ndcg_exp_topk_epoch = 0
+    val_f1_history, test_f1_history = [], []
 
     for epoch in range(args.num_epochs):
         model.train()
@@ -146,12 +150,6 @@ def main():
                 file.write(f"{epoch + 1},{idx + 1},{loss.item():.4f},{pos_loss.item():.4f},{neg_loss.item()}\n")
             if idx % 200 == 0:
                 print(f"Epoch [{epoch + 1}/{args.num_epochs}], Step [{idx + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}, Positive Loss: {pos_loss.item():.4f}, Negative Loss: {neg_loss.item():.4f}")
-                
-                for name, param in model.named_parameters():
-                    if name == 'node_emb.weight':
-                        print(f"\tNode Embedding Gradients: {param.grad[0,:5]}")
-                    if name == 'rel_emb.weight':
-                        print(f"\tRelation Embedding Gradients: {param.grad[0,:5]}")
         
         with open(train_log_file, 'a') as file:
             file.write(f"{epoch + 1}, -1, {loss_total/len(train_dataloader):.4f}, {pos_loss_total/len(train_dataloader):.4f}, {neg_loss_total/len(train_dataloader):.4f}\n")
@@ -163,6 +161,8 @@ def main():
         val_mean_ndcg_topk = val_evaluator.get_mean_ndcg_topk()
         val_mse = val_evaluator.get_mse()
         val_mae = val_evaluator.get_mae()
+        ps, rs, f1s = val_evaluator.get_f1()
+        val_f1_history.append([ps, rs, f1s])
 
         with open(val_log_file, 'a') as file:
             file.write(f"{epoch + 1}, {val_mse:.4f}, {val_mae:.4f}, {val_mean_ndcg[0]:.4f},{val_mean_ndcg[1]:.4f}, {val_mean_ndcg_topk[0]:.4f}, {val_mean_ndcg_topk[1]:.4f}\n")
@@ -228,10 +228,17 @@ def main():
         test_mean_ndcg_topk = test_evaluator.get_mean_ndcg_topk()
         test_mse = test_evaluator.get_mse()
         test_mae = test_evaluator.get_mae()
+        ps, rs, f1s = test_evaluator.get_f1()
+        test_f1_history.append([ps, rs, f1s])
+        
     
         with open(test_log_file, 'a') as file:
             file.write(f"{epoch + 1},{test_mse:.4f}, {test_mae:.4f}, {test_mean_ndcg[0]:.4f},{test_mean_ndcg[1]:.4f}, {test_mean_ndcg_topk[0]:.4f},{test_mean_ndcg_topk[1]:.4f}\n")
         print(f"Test\nMSE: {test_mse:.4f}, MAE: {test_mae:.4f}, Mean nDCG: {test_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {test_mean_ndcg[1]:.4f}, Mean nDCG top 200: {test_mean_ndcg_topk[0]:.4f}, Exponential Mean nDCG top 200: {test_mean_ndcg_topk[1]:.4f}")
+
+    np.save(val_f1_log_file, np.array(val_f1_history))
+    np.save(test_f1_log_file, np.array(test_f1_history))
+
 
 if __name__ == "__main__":
     main()
