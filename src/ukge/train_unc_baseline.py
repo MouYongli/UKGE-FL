@@ -57,16 +57,15 @@ def main():
     parser.add_argument('--test_batch_size', default=1024, type=int)
     parser.add_argument('--lr', default=0.01, type=float)
     parser.add_argument('--weight_decay', default=0.0, type=float)
-    parser.add_argument('--topk', default=200, type=int)
+    parser.add_argument('--topk', default=True, type=bool)
+    parser.add_argument('--k', default=200, type=int)
     parser.add_argument('--fc_layers', default='', type=str, choices=['l1', 'l3', 'none'])
     parser.add_argument('--bias', default=False, type=bool)
     parser.add_argument('--seed', default=42, type=int)
     args = parser.parse_args()
 
     set_seed(args.seed)
-
     exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}_confi_{args.confidence_score_function}_fc_{args.fc_layers}_bias_{args.bias}_dim_{args.hidden_dim}', f'lr_{args.lr}_wd_{args.weight_decay}')
-
     if osp.exists(exp_dir):
         shutil.rmtree(exp_dir)
     os.makedirs(exp_dir)
@@ -78,29 +77,33 @@ def main():
 
     val_log_file = os.path.join(exp_dir, 'val_metrics.csv')
     with open(val_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
-
-    val_f1_log_file = os.path.join(exp_dir, 'val_f1.npy')
+        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp']) + '\n')
+    val_cls_npy_file = os.path.join(exp_dir, 'val_cls.npy')
 
     test_log_file = os.path.join(exp_dir, 'test_metrics.csv')
     with open(test_log_file, 'w') as file:
-        file.write(','.join(['Epoch', 'MSE', 'MAE', 'nDCG_lin', 'nDCG_exp', 'nDCG_lin_top200', 'nDCG_exp_top200']) + '\n')
-    
-    test_f1_log_file = os.path.join(exp_dir, 'test_f1.npy')
+        file.write(','.join(['Epoch', 'MSE', 'MAE', 'MSE_with_neg', 'MAE_with_neg', 'nDCG_lin', 'nDCG_exp']) + '\n')
+    tes_cls_npy_file = os.path.join(exp_dir, 'test_cls.npy')
+    tes_cls_with_neg_npy_file = os.path.join(exp_dir, 'test_cls_with_neg.npy')
 
-    train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive, deterministic=False)
-    val_dataset = KGTripleDataset(dataset=args.dataset, split='val')
-    test_dataset = KGTripleDataset(dataset=args.dataset, split='test')
+    train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
+    val_dataset = KGTripleDataset(dataset=args.dataset, split='val', topk=args.topk, k=args.k)
+    test_dataset = KGTripleDataset(dataset=args.dataset, split='test', topk=args.topk, k=args.k)
+    test_with_neg_dataset = KGTripleDataset(dataset=args.dataset, split='test', topk=args.topk, k=args.k, test_with_neg=True)
+
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    test_with_neg_dataloader = DataLoader(test_with_neg_dataset, batch_size=args.batch_size, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, confidence_score_function=args.confidence_score_function, fc_layers=args.fc_layers, bias=args.bias).to(device)
     criterion = nn.MSELoss()
 
-    val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device)
-    test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device)
+    val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+    test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+    test_with_neg_evaluator = Evaluator(test_with_neg_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+
     optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.999), lr=args.lr, weight_decay=args.weight_decay)
 
     best_ndcg_lin = 0.0
@@ -111,10 +114,6 @@ def main():
     best_mae_epoch = 0
     best_mse = float('inf')
     best_mse_epoch = 0
-    best_ndcg_lin_topk = 0.0
-    best_ndcg_lin_topk_epoch = 0
-    best_ndcg_exp_topk = 0.0
-    best_ndcg_exp_topk_epoch = 0
     val_f1_history, test_f1_history = [], []
 
     for epoch in range(args.num_epochs):
@@ -156,9 +155,8 @@ def main():
         print(f"Epoch [{epoch + 1}/{args.num_epochs}], Loss: {loss_total/len(train_dataloader):.4f}, Positive Loss: {pos_loss_total/len(train_dataloader):.4f}, Negative Loss: {neg_loss_total/len(train_dataloader):.4f}")
         
         model.eval()
-        val_evaluator.update_hr_scores_map()
+        val_evaluator.update()
         val_mean_ndcg = val_evaluator.get_mean_ndcg()
-        val_mean_ndcg_topk = val_evaluator.get_mean_ndcg_topk()
         val_mse = val_evaluator.get_mse()
         val_mae = val_evaluator.get_mae()
         ps, rs, f1s = val_evaluator.get_f1()
@@ -185,24 +183,6 @@ def main():
                 'best_ndcg_exp': best_ndcg_exp,
                 'best_ndcg_exp_epoch': best_ndcg_exp_epoch
                 }, osp.join(exp_dir, 'best_model_ndcg_exp.pth'))
-        
-        if val_mean_ndcg_topk[0] > best_ndcg_lin_topk:
-            best_ndcg_lin_topk = val_mean_ndcg_topk[0]
-            best_ndcg_lin_topk_epoch = epoch + 1
-            torch.save({
-                'state_dict': model.state_dict(),
-                'best_ndcg_lin_topk': best_ndcg_lin_topk,
-                'best_ndcg_lin_topk_epoch': best_ndcg_lin_topk_epoch
-                }, osp.join(exp_dir, 'best_model_ndcg_lin_topk.pth'))
-        
-        if val_mean_ndcg_topk[1] > best_ndcg_exp_topk:
-            best_ndcg_exp_topk = val_mean_ndcg_topk[1]
-            best_ndcg_exp_topk_epoch = epoch + 1
-            torch.save({
-                'state_dict': model.state_dict(),
-                'best_ndcg_exp_topk': best_ndcg_exp_topk,
-                'best_ndcg_exp_topk_epoch': best_ndcg_exp_topk_epoch
-                }, osp.join(exp_dir, 'best_model_ndcg_exp_topk.pth'))
         
         if val_mae < best_mae:
             best_mae = val_mae

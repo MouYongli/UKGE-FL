@@ -81,10 +81,6 @@ class KGEModel(torch.nn.Module):
 
 
 
-
-
-
-
 class TransE(KGEModel):
     def __init__(
         self,
@@ -94,7 +90,7 @@ class TransE(KGEModel):
         sparse: bool = False,
         confidence_score_function: str = "logi",
         p_norm: float = 2.0,
-        fc_layers: str = '1-linear',
+        fc_layers: str = '11',
         bias: bool = False,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse, confidence_score_function, fc_layers, bias)
@@ -164,7 +160,7 @@ class DistMult(KGEModel):
         hidden_channels: int,
         sparse: bool = False,
         confidence_score_function: str = "logi",
-        fc_layers: str = '1-linear',
+        fc_layers: str = 'l1',
         bias: bool = False,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse, confidence_score_function, fc_layers, bias)
@@ -228,7 +224,7 @@ class ComplEx(KGEModel):
         hidden_channels: int,
         sparse: bool = False,
         confidence_score_function: str = "logi",
-        fc_layers: str = '1-linear',
+        fc_layers: str = 'l1',
         bias: bool = False,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse, confidence_score_function, fc_layers, bias)
@@ -310,7 +306,7 @@ class RotatE(KGEModel):
         hidden_channels: int,
         sparse: bool = False,
         confidence_score_function: str = "logi",
-        fc_layers: str = '1-linear',
+        fc_layers: str = 'l1',
         bias: bool = False,
     ):
         super().__init__(num_nodes, num_relations, hidden_channels, sparse, confidence_score_function, fc_layers, bias)

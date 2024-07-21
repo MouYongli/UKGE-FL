@@ -12,31 +12,17 @@ here = osp.dirname(osp.abspath(__file__))
 data_path = osp.join(here, '../..', 'data')
 
 class KGTripleDataset(Dataset):
-    def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10, deterministic=False, threshold=0.5):
+    def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10, topk=True, k=200, test_with_neg=False) -> None:
+        super().__init__()
         self.root=root
         self.dataset = dataset
-        assert split in ['train', 'val', 'test'], "Invalid value for 'split'. It should be one of 'train', 'val', or 'test'."
         self.split = split
         self.num_neg_per_positive = num_neg_per_positive
-        self.deterministic = deterministic
-        self.threshold = threshold
-
+        self.topk = topk
+        self.k = k
+        self.test_with_neg = test_with_neg
         self.entity_id = pd.read_csv(os.path.join(self.root, dataset, 'entity_id.csv'))
         self.relation_id = pd.read_csv(os.path.join(self.root, dataset, 'relation_id.csv'))
-        all_data_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'), sep='\t', header=None)
-        data_triples_df = pd.read_csv(os.path.join(self.root, dataset, '{}.tsv'.format(split)), sep='\t', header=None)
-        
-        if self.deterministic and self.split == 'train':
-            data_triples_df = data_triples_df[data_triples_df[3] >= self.threshold]
-            all_data_triples_df = all_data_triples_df[all_data_triples_df[3] >= self.threshold]
-            
-        self.data = {
-            'head_index': data_triples_df[0].to_numpy(),
-            'rel_index': data_triples_df[1].to_numpy(),
-            'tail_index': data_triples_df[2].to_numpy(),
-            'score': data_triples_df[3].to_numpy(),
-        }
-        
         # concept vocab
         self.cons = []
         # rel vocab
@@ -44,7 +30,6 @@ class KGTripleDataset(Dataset):
         # transitive rels vocab
         self.index_cons = {}  # {string: index}
         self.index_rels = {}  # {string: index}
-        
         # Load data into cons and index_cons
         for _, row in self.entity_id.iterrows():
             # Add entity to cons list
@@ -57,34 +42,75 @@ class KGTripleDataset(Dataset):
             self.rels.append(row['relation string'])
             # Add entity and id mapping to index_cons dictionary
             self.index_rels[row['relation string']] = row['id']
-        
+        all_triples_df = pd.read_csv(os.path.join(self.root, dataset, 'data.tsv'.format(split)), sep='\t', header=None)
+        triples_df = pd.read_csv(os.path.join(self.root, self.dataset, '{}.tsv'.format(split)), sep='\t', header=None)
+
+        # record all triples in the dataset, used for negative sampling in "train" set
         self.triples_record = set([])
-
-        self.hrtw_map = {}
-        self.hr_all_tw_map = {}
-        for h_, r_, t_, w in data_triples_df.to_numpy():
-            h, r, t = int(h_), int(r_), int(t_)
-            if self.hrtw_map.get(h) == None:
-                self.hrtw_map[h] = {}
-                self.hr_all_tw_map[h] = {}
-            if self.hrtw_map[h].get(r) == None:
-                self.hrtw_map[h][r] = {t: w}
-                self.hr_all_tw_map[h][r] = {t: w}
-            else:
-                self.hrtw_map[h][r][t] = w
-                self.hr_all_tw_map[h][r][t] = w
-
-        for h_, r_, t_, w in all_data_triples_df.to_numpy():
+        for h_, r_, t_, w in all_triples_df.to_numpy():
             h, r, t = int(h_), int(r_), int(t_)
             self.triples_record.add((h, r, t))
-            if h in self.hr_all_tw_map and r in self.hr_all_tw_map[h]:
-                self.hr_all_tw_map[h][r][t] = w
+
+        # only used for "val" and "test" set
+        if self.split != 'train':
+            self.hr_ts_map = {}
+            self.hr_all_ts_map = {}
+            self.topk_hr_all_ts_map = {}
+            for h_, r_, t_, w in triples_df.to_numpy():
+                h, r, t = int(h_), int(r_), int(t_)
+                if self.hr_ts_map.get(h) == None:
+                    self.hr_ts_map[h] = {}
+                    self.hr_all_ts_map[h] = {}
+                if self.hr_ts_map[h].get(r) == None:
+                    self.hr_ts_map[h][r] = {t: w}
+                    self.hr_all_ts_map[h][r] = {t: w}
+                else:
+                    self.hr_ts_map[h][r][t] = w
+                    self.hr_all_ts_map[h][r][t] = w
+            for h_, r_, t_, w in all_triples_df.to_numpy():
+                h, r, t = int(h_), int(r_), int(t_)
+                if h in self.hr_all_ts_map and r in self.hr_all_ts_map[h]:
+                    self.hr_all_ts_map[h][r][t] = w
+            hr_num_t = {(h, r): len(self.hr_all_ts_map[h][r]) for h in self.hr_all_ts_map.keys() for r in self.hr_all_ts_map[h].keys()}
+            topk_hr_num_t = sorted(hr_num_t.items(), key=lambda item: item[1], reverse=True)[:k]
+            for (h, r), _ in topk_hr_num_t:
+                if h not in self.topk_hr_all_ts_map:
+                    self.topk_hr_all_ts_map[h] = {}
+                if r not in self.topk_hr_all_ts_map[h]:
+                    self.topk_hr_all_ts_map[h][r] = self.hr_all_ts_map[h][r]
+
+        if self.split == 'test' and self.test_with_neg:
+            triples_df = pd.read_csv(os.path.join(self.root, dataset, 'test_with_neg.tsv'), sep='\t', header=None)
+            for h_, r_, t_, w in triples_df.to_numpy():
+                h, r, t = int(h_), int(r_), int(t_)
+                if self.hr_ts_map.get(h) == None:
+                    self.hr_ts_map[h] = {}
+                if self.hr_ts_map[h].get(r) == None:
+                    self.hr_ts_map[h][r] = {t: w}
+                else:
+                    self.hr_ts_map[h][r][t] = w
+        
+        self.data = {
+            'head_index': triples_df[0].to_numpy(),
+            'rel_index': triples_df[1].to_numpy(),
+            'tail_index': triples_df[2].to_numpy(),
+            'score': triples_df[3].to_numpy(),
+        }
+
+    def get_hr_ts_map(self) -> dict:
+        if self.split == 'train':
+            raise ValueError("This method is only used for 'val' and 'test' set.")
+        return self.hr_ts_map
     
-    def get_hrtw_map(self):
-        return self.hrtw_map
+    def get_hr_all_ts_map(self) -> dict:
+        if self.split == 'train':
+            raise ValueError("This method is only used for 'val' and 'test' set.")
+        return self.hr_all_ts_map
     
-    def get_hr_all_tw_map(self):
-        return self.hr_all_tw_map
+    def get_topk_hr_all_ts_map(self) -> dict:
+        if self.split == 'train' or self.topk == False:
+            raise ValueError("This method is only used for 'val' and 'test' set when topk is True.")
+        return self.topk_hr_all_ts_map
 
     def num_cons(self):
         '''Returns number of ontologies.
@@ -168,7 +194,7 @@ class KGTripleDataset(Dataset):
     def __len__(self):
         return len(self.data['head_index'])
     
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> Any:
         h = self.data['head_index'][idx]
         r = self.data['rel_index'][idx]
         t = self.data['tail_index'][idx]
@@ -179,6 +205,51 @@ class KGTripleDataset(Dataset):
             return np.array([h, r, t]), np.array(s), nhrt, hrnt
         else:
             return np.array([h, r, t]), np.array(s)
+        
+
+
+# class DetKGTripleDataset(KGTripleDataset):
+#     def __init__(self, root: str=data_path, dataset: str='cn15k', split: str='train', num_neg_per_positive: int=10, topk=True, k=200, deterministic=False, threshold=0.5):   
+#         super().__init__(root=root, dataset=dataset, split=split, num_neg_per_positive=num_neg_per_positive)
+#         self.deterministic = deterministic
+#         self.threshold = threshold
+#         data_triples_df = pd.read_csv(os.path.join(self.root, self.dataset, '{}.tsv'.format(self.split)), sep='\t', header=None)
+#         all_data_triples_df = pd.read_csv(os.path.join(self.root, self.dataset, 'data.tsv'), sep='\t', header=None)
+
+#         if self.deterministic and self.split == 'train':
+#             data_triples_df = data_triples_df[data_triples_df[3] >= self.threshold]
+#             all_data_triples_df = all_data_triples_df[all_data_triples_df[3] >= self.threshold]
+            
+#         self.data = {
+#             'head_index': data_triples_df[0].to_numpy(),
+#             'rel_index': data_triples_df[1].to_numpy(),
+#             'tail_index': data_triples_df[2].to_numpy(),
+#             'score': data_triples_df[3].to_numpy(),
+#         }
+        
+#         self.triples_record = set([])
+
+#         self.hrtw_map = {}
+#         self.hr_all_tw_map = {}
+#         for h_, r_, t_, w in data_triples_df.to_numpy():
+#             h, r, t = int(h_), int(r_), int(t_)
+#             if self.hrtw_map.get(h) == None:
+#                 self.hrtw_map[h] = {}
+#                 self.hr_all_tw_map[h] = {}
+#             if self.hrtw_map[h].get(r) == None:
+#                 self.hrtw_map[h][r] = {t: w}
+#                 self.hr_all_tw_map[h][r] = {t: w}
+#             else:
+#                 self.hrtw_map[h][r][t] = w
+#                 self.hr_all_tw_map[h][r][t] = w
+
+#         for h_, r_, t_, w in all_data_triples_df.to_numpy():
+#             h, r, t = int(h_), int(r_), int(t_)
+#             self.triples_record.add((h, r, t))
+#             if h in self.hr_all_tw_map and r in self.hr_all_tw_map[h]:
+#                 self.hr_all_tw_map[h][r][t] = w
+
+
 
 class KGPSLTripleDataset(Dataset):
     def __init__(self, root: str=data_path, dataset: str='cn15k'):
@@ -214,39 +285,6 @@ class KGPSLTripleDataset(Dataset):
             self.rels.append(row['relation string'])
             # Add entity and id mapping to index_cons dictionary
             self.index_rels[row['relation string']] = row['id']
-
-    def num_cons(self):
-        '''Returns number of ontologies.
-
-        This means all ontologies have index that 0 <= index < num_onto().
-        '''
-        return len(self.cons)
-
-    def num_rels(self):
-        '''Returns number of relations.
-
-        This means all relations have index that 0 <= index < num_rels().
-        Note that we consider *ALL* relations, e.g. $R_O$, $R_h$ and $R_{tr}$.
-        '''
-        return len(self.rels)
-
-    def rel_str2index(self, rel_str):
-        '''For relation `rel_str` in string, returns its index.
-
-        This is not used in training, but can be helpful for visualizing/debugging etc.'''
-        return self.index_rels.get(rel_str)
-
-    def rel_index2str(self, rel_index):
-        '''For relation `rel_index` in int, returns its string.
-
-        This is not used in training, but can be helpful for visualizing/debugging etc.'''
-        return self.rels[rel_index]
-
-    def con_str2index(self, con_str):
-        '''For ontology `con_str` in string, returns its index.
-
-        This is not used in training, but can be helpful for visualizing/debugging etc.'''
-        return self.index_cons.get(con_str)
     
     def __len__(self):
         return len(self.data['head_index'])
