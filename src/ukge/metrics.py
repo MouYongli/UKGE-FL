@@ -67,7 +67,7 @@ class Evaluator(object):
         self.update_hr_all_tp_map()
     
     def update_hr_tp_map(self):
-        print("Updating hr_tp_map...")
+        # print("Updating hr_tp_map...")
         for _, batch in enumerate(self.dataloader):
             hrt, _ = batch
             hrt = hrt.long().to(self.device)
@@ -78,7 +78,7 @@ class Evaluator(object):
                 self.hr_tp_map[h[j]][r[j]][t[j]] = s[j]
 
     def update_hr_all_tp_map(self):
-        print("Updating hr_all_tp_map...")
+        # print("Updating hr_all_tp_map...")
         for h in self.hr_all_tp_map.keys():
             for r in self.hr_all_ts_map[h].keys():
                 self.hr_all_tp_map[h][r] = self.get_hr_scores(h, r) # list of scores for all tail entities（但没有显示对应的tail index
@@ -96,31 +96,31 @@ class Evaluator(object):
             scores.extend(batch_scores.detach().cpu().numpy().tolist())
         return scores
 
-    # def get_f1(self) ->  Tuple[Tuple[float], Tuple[float], Tuple[float]]:
-    #     """
-    #     Calculate the F1 score of the given list of (h, r, t, w, w_hat) tuples.
-    #     """
-    #     w = np.array([self.hrtw_map[h][r][t] for h in self.hrtw_map.keys() for r in self.hrtw_map[h].keys() for t in self.hrtw_map[h][r].keys()])
-    #     w_hat = np.array([self.hr_scores_map[h][r][t]for h in self.hrtw_map.keys() for r in self.hrtw_map[h].keys() for t in self.hrtw_map[h][r].keys()])
-    #     precisions, recalls, f1s = [], [], []
-    #     for i in np.arange(0, 1, 0.05):
-    #         w_t = (w > i).astype(int)
-    #         p_t, r_t, f1_t = [], [], []
-    #         for j in np.arange(0, 1, 0.05):
-    #             w_hat_t = (w_hat > j).astype(int)
-    #             tp = np.sum(w_t * w_hat_t)
-    #             fp = np.sum((1 - w_t) * w_hat_t)
-    #             fn = np.sum(w_t * (1 - w_hat_t))
-    #             p = tp / (tp + fp) if tp + fp > 0 else 0
-    #             r = tp / (tp + fn) if tp + fn > 0 else 0
-    #             f1 = 2 * p * r / (p + r) if p + r > 0 else 0
-    #             p_t.append(p)
-    #             r_t.append(r)
-    #             f1_t.append(f1)
-    #         precisions.append(p_t)
-    #         recalls.append(r_t)
-    #         f1s.append(f1_t)
-    #     return precisions, recalls, f1s
+    def get_f1(self) -> Tuple[List[List[float]], List[List[float]], List[List[float]]]:
+        """
+        Calculate the F1 score of the given list of (h, r, t, w, w_hat) tuples.
+        """
+        w = np.array([self.hr_ts_map[h][r][t] for h in self.hr_ts_map.keys() for r in self.hr_ts_map[h].keys() for t in self.hr_ts_map[h][r].keys()])
+        w_hat = np.array([self.hr_tp_map[h][r][t] for h in self.hr_ts_map.keys() for r in self.hr_ts_map[h].keys() for t in self.hr_ts_map[h][r].keys()])
+        precisions, recalls, f1s = [], [], []
+        for i in np.arange(0, 1, 0.05):
+            w_t = (w > i).astype(int)
+            p_t, r_t, f1_t = [], [], []
+            for j in np.arange(0, 1, 0.05):
+                w_hat_t = (w_hat > j).astype(int)
+                tp = np.sum(w_t * w_hat_t)
+                fp = np.sum((1 - w_t) * w_hat_t)
+                fn = np.sum(w_t * (1 - w_hat_t))
+                p = tp / (tp + fp) if tp + fp > 0 else 0
+                r = tp / (tp + fn) if tp + fn > 0 else 0
+                f1 = 2 * p * r / (p + r) if p + r > 0 else 0
+                p_t.append(p)
+                r_t.append(r)
+                f1_t.append(f1)
+            precisions.append(p_t)
+            recalls.append(r_t)
+            f1s.append(f1_t)
+        return precisions, recalls, f1s
 
     def get_mse(self) -> float:
         """

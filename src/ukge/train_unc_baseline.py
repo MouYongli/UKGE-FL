@@ -54,18 +54,17 @@ def main():
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=1024, type=int)
-    parser.add_argument('--test_batch_size', default=1024, type=int)
     parser.add_argument('--lr', default=0.01, type=float)
     parser.add_argument('--weight_decay', default=0.0, type=float)
-    parser.add_argument('--topk', default=True, type=bool)
+    parser.add_argument('--topk', action='store_true', help='Set topk to True')
     parser.add_argument('--k', default=200, type=int)
-    parser.add_argument('--fc_layers', default='', type=str, choices=['l1', 'l3', 'none'])
-    parser.add_argument('--bias', default=False, type=bool)
+    parser.add_argument('--fc_layers', default='none', type=str, choices=['l1', 'l3', 'none'])
+    parser.add_argument('--bias', action='store_true', help='Set bias to True')
     parser.add_argument('--seed', default=42, type=int)
     args = parser.parse_args()
 
     set_seed(args.seed)
-    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}_confi_{args.confidence_score_function}_fc_{args.fc_layers}_bias_{args.bias}_dim_{args.hidden_dim}', f'lr_{args.lr}_wd_{args.weight_decay}')
+    exp_dir = osp.join(work_dir, f'unc_{args.dataset}_{args.model}_confi_{args.confidence_score_function}_fc_{args.fc_layers}_bias_{args.bias}_dim_{args.hidden_dim}', f'lr_{args.lr}_wd_{args.weight_decay}_topk_{args.topk}')
     if osp.exists(exp_dir):
         shutil.rmtree(exp_dir)
     os.makedirs(exp_dir)
@@ -83,8 +82,8 @@ def main():
     test_log_file = os.path.join(exp_dir, 'test_metrics.csv')
     with open(test_log_file, 'w') as file:
         file.write(','.join(['Epoch', 'MSE', 'MAE', 'MSE_with_neg', 'MAE_with_neg', 'nDCG_lin', 'nDCG_exp']) + '\n')
-    tes_cls_npy_file = os.path.join(exp_dir, 'test_cls.npy')
-    tes_cls_with_neg_npy_file = os.path.join(exp_dir, 'test_cls_with_neg.npy')
+    test_cls_npy_file = os.path.join(exp_dir, 'test_cls.npy')
+    test_cls_with_neg_npy_file = os.path.join(exp_dir, 'test_cls_with_neg.npy')
 
     train_dataset = KGTripleDataset(dataset=args.dataset, split='train', num_neg_per_positive=args.num_neg_per_positive)
     val_dataset = KGTripleDataset(dataset=args.dataset, split='val', topk=args.topk, k=args.k)
@@ -114,7 +113,7 @@ def main():
     best_mae_epoch = 0
     best_mse = float('inf')
     best_mse_epoch = 0
-    val_f1_history, test_f1_history = [], []
+    val_f1_history, test_f1_history, test_with_neg_f1_history= [], [], []
 
     for epoch in range(args.num_epochs):
         model.train()
@@ -133,6 +132,7 @@ def main():
             pred_pos_score = model.get_confidence_score(pos_hrt[:, 0], pos_hrt[:, 1], pos_hrt[:, 2])
             pred_neg_hn_score = model.get_confidence_score(neg_hn_rt[:, 0], neg_hn_rt[:, 1], neg_hn_rt[:, 2])
             pred_neg_tn_score = model.get_confidence_score(neg_hr_tn[:, 0], neg_hr_tn[:, 1], neg_hr_tn[:, 2])
+            
             neg_target = torch.zeros_like(pred_neg_hn_score)           
 
             pos_loss = criterion(pred_pos_score, pos_target)
@@ -163,8 +163,8 @@ def main():
         val_f1_history.append([ps, rs, f1s])
 
         with open(val_log_file, 'a') as file:
-            file.write(f"{epoch + 1}, {val_mse:.4f}, {val_mae:.4f}, {val_mean_ndcg[0]:.4f},{val_mean_ndcg[1]:.4f}, {val_mean_ndcg_topk[0]:.4f}, {val_mean_ndcg_topk[1]:.4f}\n")
-        print(f"Validation\nMSE: {val_mse:.4f}, MAE: {val_mae:.4f}, Mean nDCG: {val_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {val_mean_ndcg[1]:.4f}, Mean nDCG top 200: {val_mean_ndcg_topk[0]:.4f}, Exponential Mean nDCG top 200: {val_mean_ndcg_topk[1]:.4f}")
+            file.write(f"{epoch + 1}, {val_mse:.4f}, {val_mae:.4f}, {val_mean_ndcg[0]:.4f},{val_mean_ndcg[1]:.4f}\n")
+        print(f"Validation\nMSE: {val_mse:.4f}, MAE: {val_mae:.4f}, Mean nDCG: {val_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {val_mean_ndcg[1]:.4f}")
 
         if val_mean_ndcg[0] > best_ndcg_lin:
             best_ndcg_lin = val_mean_ndcg[0]
@@ -203,21 +203,30 @@ def main():
                 }, osp.join(exp_dir, 'best_model_mse.pth'))
 
         model.eval()
-        test_evaluator.update_hr_scores_map()
+        test_evaluator.update()
+        test_with_neg_evaluator.update_hr_tp_map()
+
         test_mean_ndcg = test_evaluator.get_mean_ndcg()
-        test_mean_ndcg_topk = test_evaluator.get_mean_ndcg_topk()
+
         test_mse = test_evaluator.get_mse()
         test_mae = test_evaluator.get_mae()
-        ps, rs, f1s = test_evaluator.get_f1()
-        test_f1_history.append([ps, rs, f1s])
-        
-    
-        with open(test_log_file, 'a') as file:
-            file.write(f"{epoch + 1},{test_mse:.4f}, {test_mae:.4f}, {test_mean_ndcg[0]:.4f},{test_mean_ndcg[1]:.4f}, {test_mean_ndcg_topk[0]:.4f},{test_mean_ndcg_topk[1]:.4f}\n")
-        print(f"Test\nMSE: {test_mse:.4f}, MAE: {test_mae:.4f}, Mean nDCG: {test_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {test_mean_ndcg[1]:.4f}, Mean nDCG top 200: {test_mean_ndcg_topk[0]:.4f}, Exponential Mean nDCG top 200: {test_mean_ndcg_topk[1]:.4f}")
 
-    np.save(val_f1_log_file, np.array(val_f1_history))
-    np.save(test_f1_log_file, np.array(test_f1_history))
+        test_mse_with_neg = test_with_neg_evaluator.get_mse()
+        test_mae_with_neg = test_with_neg_evaluator.get_mae()
+
+        ps, rs, f1s = test_evaluator.get_f1()
+        ps_with_neg, rs_with_neg, f1s_with_neg = test_with_neg_evaluator.get_f1()
+
+        test_f1_history.append([ps, rs, f1s])
+        test_with_neg_f1_history.append([ps_with_neg, rs_with_neg, f1s_with_neg])
+
+        with open(test_log_file, 'a') as file:
+            file.write(f"{epoch + 1}, {test_mse:.4f}, {test_mae:.4f}, {test_mse_with_neg:.4f}, {test_mae_with_neg:.4f}, {test_mean_ndcg[0]:.4f},{test_mean_ndcg[1]:.4f}\n")
+        print(f"Test\nMSE: {test_mse:.4f}, MAE: {test_mae:.4f}, MSE (with neg): {test_mse_with_neg:.4f}, MAE (with neg): {test_mae_with_neg:.4f}, Mean nDCG: {test_mean_ndcg[0]:.4f}, Exponential Mean nDCG: {test_mean_ndcg[1]:.4f}")
+
+    np.save(val_cls_npy_file, np.array(val_f1_history))
+    np.save(test_cls_npy_file, np.array(test_f1_history))
+    np.save(test_cls_with_neg_npy_file, np.array(test_with_neg_f1_history))
 
 
 if __name__ == "__main__":
