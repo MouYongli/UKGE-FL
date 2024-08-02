@@ -16,7 +16,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 # from torch.utils.tensorboard import SummaryWriter
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 model_map = {
