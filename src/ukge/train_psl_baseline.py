@@ -46,7 +46,10 @@ def main():
     parser.add_argument('--hidden_dim', default=128, type=int)
     parser.add_argument('--num_epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=1024, type=int)
+<<<<<<< HEAD
     parser.add_argument('--test_batch_size', default=1024, type=int)
+=======
+>>>>>>> 43ab7a4b499436df278b9b4ebd223049c60f3b28
     parser.add_argument('--lr', default=0.01, type=float)
     parser.add_argument('--weight_decay', default=0.0, type=float)
     parser.add_argument('--topk', action='store_true', help='Set topk to True')
@@ -59,7 +62,11 @@ def main():
     args = parser.parse_args()
 
     set_seed(args.seed)
+<<<<<<< HEAD
     exp_dir = osp.join(work_dir, f'psl_{args.dataset}_{args.model}_confi_{args.confidence_score_function}_fc_{args.fc_layers}_bias_{args.bias}_dim_{args.hidden_dim}', f'lr_{args.lr}_wd_{args.weight_decay}_topk_{args.topk}_bs_{args.batch_size}')
+=======
+    exp_dir = osp.join(work_dir, f'psl_{args.dataset}_{args.model}_confi_{args.confidence_score_function}_fc_{args.fc_layers}_bias_{args.bias}_dim_{args.hidden_dim}', f'lr_{args.lr}_wd_{args.weight_decay}_topk_{args.topk}')
+>>>>>>> 43ab7a4b499436df278b9b4ebd223049c60f3b28
     if osp.exists(exp_dir):
         shutil.rmtree(exp_dir)
     os.makedirs(exp_dir)
@@ -88,18 +95,30 @@ def main():
     psl_batch_size = int(len(psl_dataset) / len(train_dataset) * args.batch_size)
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+<<<<<<< HEAD
     val_dataloader = DataLoader(val_dataset, batch_size=args.test_batch_size, shuffle=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False)
     test_with_neg_dataloader = DataLoader(test_with_neg_dataset, batch_size=args.test_batch_size, shuffle=False)
+=======
+    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    test_with_neg_dataloader = DataLoader(test_with_neg_dataset, batch_size=args.batch_size, shuffle=False)
+>>>>>>> 43ab7a4b499436df278b9b4ebd223049c60f3b28
     psl_dataloader = DataLoader(psl_dataset, batch_size=psl_batch_size, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model_map[args.model](num_nodes=train_dataset.num_cons(), num_relations=train_dataset.num_rels(), hidden_channels=args.hidden_dim, confidence_score_function=args.confidence_score_function, fc_layers=args.fc_layers, bias=args.bias).to(device)
     criterion = nn.MSELoss()
 
+<<<<<<< HEAD
     val_evaluator = Evaluator(val_dataloader, model, batch_size=args.test_batch_size, device=device, topk=args.topk)
     test_evaluator = Evaluator(test_dataloader, model, batch_size=args.test_batch_size, device=device, topk=args.topk)
     test_with_neg_evaluator = Evaluator(test_with_neg_dataloader, model, batch_size=args.test_batch_size, device=device, topk=args.topk)
+=======
+    val_evaluator = Evaluator(val_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+    test_evaluator = Evaluator(test_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+    test_with_neg_evaluator = Evaluator(test_with_neg_dataloader, model, batch_size=args.batch_size, device=device, topk=args.topk)
+>>>>>>> 43ab7a4b499436df278b9b4ebd223049c60f3b28
 
     optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.999), lr=args.lr, weight_decay=args.weight_decay)
 
